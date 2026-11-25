@@ -15,122 +15,129 @@ async function test(name, fn) {
 const lot = n => Array.from({ length: n }, (_, i) => String(i));
 const B = (ranking, i) => ({ id: 'b' + i, ranking });
 const rep = (n, ranking) => Array.from({ length: n }, () => ranking);
+const add = async (an, ...blocks) => VC.analyse([...an.blocks, ...blocks]);
+const body = b => { const { sig, ...rest } = b; return rest; };
 
-await test('STV: surplus transfers proportionally (6 A>B, 1 B, 2 C; 2 seats)', () => {
+// ---------- the count ----------
+await test('STV: surplus transfers proportionally (6 A>B, 1 B, 2 C; elect 2)', () => {
   const r = VC.stv(3, 2, [...rep(6, [0, 1]), [1], ...rep(2, [2])].map(B), lot(3));
   assert.equal(String(r.quota), '4');
   assert.deepEqual(r.elected, [0, 1]);
-  // each A>B ballot keeps 2/3 with A and passes 1/3 to B
   const o = r.outcome.get('b0');
   assert.equal(o.trail[0].w.toString(), '0.6666');
   assert.equal(o.trail[1].w.toString(), '0.3333');
 });
-await test('STV: one seat behaves as instant runoff', () => {
-  // A 4, B 3, C 2 (C>B): C excluded, B wins 5-4
+await test('STV: electing one behaves as instant runoff', () => {
   const r = VC.stv(3, 1, [...rep(4, [0]), ...rep(3, [1]), ...rep(2, [2, 1])].map(B), lot(3));
   assert.equal(String(r.quota), '5');
   assert.deepEqual(r.elected, [1]);
 });
 await test('STV: a minority bloc wins its proportional share', () => {
-  // 60 voters for party X (A>B>C), 40 for party Y (D>E); 3 seats -> X gets 2, Y gets 1
   const r = VC.stv(5, 3, [...rep(60, [0, 1, 2]), ...rep(40, [3, 4])].map(B), lot(5));
   assert.deepEqual([...r.elected].sort(), [0, 1, 3]);
 });
-await test('STV: no ballots elects nobody; total value is conserved', () => {
+await test('STV: no ballots elects nobody; every ballot keeps a total value of 1', () => {
   assert.deepEqual(VC.stv(3, 2, [], lot(3)).elected, []);
-  const bs = [...rep(7, [0, 1, 2]), ...rep(3, [1]), ...rep(4, [2, 0]), ...rep(2, [3])].map(B);
-  const r = VC.stv(4, 2, bs, lot(4));
-  for (const [, o] of r.outcome) {
-    const sum = o.trail.reduce((s, t) => s.add(t.w), o.exhausted);
-    assert.equal(sum.toString(), '1');
-  }
+  const r = VC.stv(4, 2, [...rep(7, [0, 1, 2]), ...rep(3, [1]), ...rep(4, [2, 0]), ...rep(2, [3])].map(B), lot(4));
+  for (const [, o] of r.outcome) assert.equal(o.trail.reduce((s, t) => s.add(t.w), o.exhausted).toString(), '1');
 });
 
-// ---- full election flow ----
+// ---------- a full election ----------
 const spec = {
-  title: 'Test election', description: 'd', candidates: ['Ann', 'Bob', 'Cy', 'Di'], seats: 2,
-  pools: [{ name: 'Members', binding: true, generate: 6 }, { name: 'Supporters', binding: false, generate: 3 }],
+  title: 'Test election', description: 'd', electorate: 6,
+  races: [{ name: 'President', seats: 1, candidates: ['Ann', 'Bob', 'Cy'] }, { name: 'Committee', seats: 2, candidates: ['Di', 'Ed', 'Flo', 'Gus'] }],
+  pools: [{ name: 'Verified', open: false, generate: 3 }, { name: 'Unverified', open: true }],
 };
 const el = await VC.createElection(spec);
-const members = el.tickets.filter(t => t.pool === 'Members').map(t => t.ticket);
-const supporters = el.tickets.filter(t => t.pool === 'Supporters').map(t => t.ticket);
-const genesisOnly = [el.genesis];
-let finalBlocks, firstBallotId, lateBlock;
+const T = el.tickets.map(t => t.ticket);
+const walk = [await VC.newVoterKey(), await VC.newVoterKey(), await VC.newVoterKey()];
+const G = await VC.analyse([el.genesis]);
+const cast = {};   // name -> {block, id, code, choices}
+async function vote(name, an, ticket, choices) { cast[name] = { ...(await VC.createBallot(an, ticket, choices)), choices }; return cast[name].block; }
+let open, final;
 
-await test('genesis verifies; roll and pools are set up', async () => {
-  const an = await VC.analyse(genesisOnly);
+await test('genesis: positions, pools and the open pool are set up; tampering is caught', async () => {
+  assert.deepEqual(G.errors, []);
+  assert.equal(G.openPool, 1);
+  assert.deepEqual(G.pools, [{ known: 3, voted: 0 }, { known: 0, voted: 0 }]);
+  const bad = await VC.analyse([{ ...el.genesis, electorate: 99 }]);
+  assert.equal(bad.genesis, null);
+  await assert.rejects(VC.createElection({ ...spec, races: [{ name: 'P', seats: 2, candidates: ['A'] }] }), /number to elect/);
+  await assert.rejects(VC.createElection({ ...spec, pools: [{ name: 'A', open: true }, { name: 'B', open: true }] }), /one pool can be open/);
+});
+
+await test('everyone votes in parallel from the genesis file; files merge in any order', async () => {
+  // ticket holders and walk-ins all start from the same genesis file
+  const blocks = [
+    await vote('t0', G, T[0], [[0, 1], [0, 1]]),
+    await vote('t1', G, T[1], [[0], [0, 2]]),
+    await vote('t2', G, T[2], [[1, 0], [1]]),
+    await vote('w0', G, walk[0].ticket, [[1], [3, 1]]),
+    await vote('w1', G, walk[1].ticket, [[], [2]]),      // leaves President blank
+  ];
+  assert.ok(blocks.every(b => b.parents.length === 1 && b.parents[0] === el.id));
+  open = await VC.analyse([blocks[3], blocks[0], el.genesis, blocks[4], blocks[1], blocks[2], blocks[0]]);
+  assert.deepEqual(open.errors, []);
+  assert.equal(open.blocks.length, 6);
+  assert.equal(open.heads.length, 5);
+  assert.deepEqual(open.pools, [{ known: 3, voted: 3 }, { known: 0, voted: 2 }]);
+  assert.deepEqual((await VC.analyse([...open.blocks].reverse())).order, open.order);
+  await assert.rejects(VC.createBallot(G, T[0], [[], []]), /at least one nominee/);
+  await assert.rejects(VC.createBallot(G, T[0], [[0, 0], []]), /at most once/);
+});
+
+await test('ballots are unreadable without the organiser key', () => {
+  const text = JSON.stringify(open.blocks);
+  for (const c of Object.values(cast)) assert.equal(text.includes(c.code), false);
+  assert.equal(new Set(open.blocks.filter(b => b.type === 'ballot').map(b => b.box.ct.length)).size, 1, 'all ciphertexts are the same length');
+});
+
+await test('admission moves a confirmed walk-in to the verified pool; a later admission overrides', async () => {
+  const a1 = await VC.createAdmit(open, el.organiserKey, [{ voter: walk[0].pubString, pool: 0, note: 'Wanda' }]);
+  const an = await add(open, a1.block);
   assert.deepEqual(an.errors, []);
-  assert.equal(an.id, el.id);
-  assert.deepEqual(an.turnout, [{ roll: 6, voted: 0 }, { roll: 3, voted: 0 }]);
-  assert.deepEqual(an.heads, [el.id]);
-});
-await test('tampered genesis is rejected', async () => {
-  const an = await VC.analyse([{ ...el.genesis, seats: 1 }]);
-  assert.equal(an.genesis, null);
-  assert.match(an.errors[0], /signature/);
-});
-
-await test('voters fork from genesis, files merge, later voters chain on top', async () => {
-  const an0 = await VC.analyse(genesisOnly);
-  // three voters each work from the genesis file independently
-  const a = await VC.createBallot(an0, members[0], [0, 1]);
-  const b = await VC.createBallot(an0, members[1], [0, 1]);
-  const c = await VC.createBallot(an0, supporters[0], [3]);
-  firstBallotId = a.id;
-  // merge = union of blocks, in any order, with duplicates
-  const merged = await VC.analyse([c.block, el.genesis, a.block, b.block, a.block]);
-  assert.deepEqual(merged.errors, []);
-  assert.equal(merged.blocks.length, 4);
-  assert.equal(merged.heads.length, 3);
-  // the next voter builds on all three heads, knitting the forks together
-  const d = await VC.createBallot(merged, members[2], [0, 1, 2]);
-  assert.equal(d.block.parents.length, 3);
-  let an = await VC.analyse([...merged.blocks, d.block]);
-  assert.deepEqual(an.heads, [d.id]);
-  for (const [t, r] of [[members[3], [1]], [members[4], [2]], [members[5], [0, 1]], [supporters[1], [3, 2]]]) {
-    const x = await VC.createBallot(an, t, r);
-    an = await VC.analyse([...an.blocks, x.block]);
-  }
-  assert.deepEqual(an.errors, []);
-  assert.deepEqual(an.turnout, [{ roll: 6, voted: 6 }, { roll: 3, voted: 2 }]);
-  // merging is order independent
-  const shuffled = await VC.analyse([...an.blocks].reverse());
-  assert.deepEqual(shuffled.order, an.order);
-  finalBlocks = an.blocks;
+  assert.deepEqual(an.pools, [{ known: 4, voted: 4 }, { known: 0, voted: 1 }]);
+  assert.equal(an.admitted.get(walk[0].pub).note, 'Wanda');
+  assert.deepEqual(an.heads, [a1.id]);
+  // organiser corrects a mistake: the later block wins
+  const a2 = await VC.createAdmit(an, el.organiserKey, [{ voter: walk[0].pubString, pool: 1, note: 'oops' }]);
+  assert.equal((await add(an, a2.block)).poolOf(walk[0].pub), 1);
+  // only the organiser can admit
+  const forged = await VC.signBlock(body(a1.block), walk[1].pub, VC.parseTicket(walk[1].ticket).priv);
+  const f = await VC.analyse([...open.blocks, forged]);
+  assert.equal([...f.info.values()].find(n => n.type === 'admit').reason, 'invalid signature');
+  await assert.rejects(VC.createAdmit(open, (await VC.createElection(spec)).organiserKey, [{ voter: walk[0].pubString, pool: 0 }]), /different election/);
+  await assert.rejects(VC.createAdmit(open, el.organiserKey, [{ voter: 'nonsense', pool: 0 }]), /Not a voter public key/);
+  open = an;
 });
 
-await test('a ticket cannot vote twice; a forged duplicate is not counted', async () => {
-  const an = await VC.analyse(finalBlocks);
-  await assert.rejects(VC.createBallot(an, members[0], [2]), /already voted/);
-  // the voter tries again from the bare genesis file and merges it in
-  const dup = await VC.createBallot(await VC.analyse(genesisOnly), members[0], [2]);
-  const m = await VC.analyse([...finalBlocks, dup.block]);
-  const sup = [...m.info.values()].filter(n => n.superseded);
-  assert.equal(sup.length, 1);
-  assert.equal(m.turnout[0].voted, 6);
+await test('without an open pool, an unknown key only counts once admitted', async () => {
+  const e2 = await VC.createElection({ ...spec, pools: [{ name: 'Members', open: false, generate: 1 }] });
+  const g2 = await VC.analyse([e2.genesis]);
+  const v = await VC.createBallot(g2, walk[2].ticket, [[0], []]);
+  let an = await add(g2, v.block);
+  assert.equal(an.info.get(v.id).ineligible, true);
+  assert.equal(an.voted.size, 0);
+  an = await add(an, (await VC.createAdmit(an, e2.organiserKey, [{ voter: walk[2].pub, pool: 0, note: '' }])).block);
+  assert.equal(an.voted.get(walk[2].pub), v.id);
 });
-await test('unknown voters, bad signatures, tampered and orphaned ballots are rejected', async () => {
-  const an = await VC.analyse(finalBlocks);
-  const stranger = await VC.newVoterKey();
-  await assert.rejects(VC.createBallot(an, stranger.ticket, [0]), /not on the voter roll/);
-  await assert.rejects(VC.createBallot(await VC.analyse(genesisOnly), members[0], [0, 0]), /at most once/);
-  const good = finalBlocks.find(b => b.type === 'ballot');
-  const id = await VC.blockId(good);
+
+await test('one ballot per key; forged, tampered and orphaned blocks are rejected', async () => {
+  await assert.rejects(VC.createBallot(open, T[0], [[2], []]), /already voted/);
+  const dup = await VC.createBallot(G, T[0], [[2], []]);
+  const m = await add(open, dup.block);
+  assert.equal([...m.info.values()].filter(n => n.superseded).length, 1);
+  assert.equal(m.pools[0].voted, 4);
+  const good = cast.t1.block;
   const badSig = await VC.analyse([el.genesis, { ...good, sig: good.sig.slice(0, -4) + 'AAAA' }]);
-  assert.equal(badSig.info.get(id).reason, 'invalid signature');
-  // changing the body changes the ID, and the signature no longer covers it
-  const swapped = { ...good, box: { ...good.box, ct: good.box.ct.slice(0, -4) + 'AAAA' } };
-  const t = await VC.analyse([el.genesis, swapped]);
+  assert.equal(badSig.info.get(cast.t1.id).reason, 'invalid signature');
+  const t = await VC.analyse([el.genesis, { ...good, box: { ...good.box, ct: good.box.ct.slice(0, -4) + 'AAAA' } }]);
   assert.equal([...t.info.values()].filter(n => !n.valid).length, 1);
-  // a block whose parent is absent is held as an orphan, and becomes valid once merged
-  const last = finalBlocks[finalBlocks.length - 1];
+  const last = open.blocks[open.blocks.length - 1];
   const orphan = await VC.analyse([el.genesis, last]);
   assert.match(orphan.info.get(await VC.blockId(last)).reason, /missing parent/);
-  assert.equal(orphan.blocks.length, 2);
-  assert.deepEqual((await VC.analyse([...orphan.blocks, ...finalBlocks])).errors, []);
-  // blocks from another election do not merge
-  const other = await VC.createElection(spec);
-  assert.match((await VC.analyse([...finalBlocks, other.genesis])).errors[0], /more than one election/);
+  assert.deepEqual((await VC.analyse([...orphan.blocks, ...open.blocks])).errors, []);
+  assert.match((await VC.analyse([...open.blocks, (await VC.createElection(spec)).genesis])).errors[0], /more than one election/);
 });
 
 await test('organiser key file: passphrase protection round-trips', async () => {
@@ -140,88 +147,101 @@ await test('organiser key file: passphrase protection round-trips', async () => 
   await assert.rejects(VC.unprotectKey(p, 'wrong'), /Wrong passphrase/);
 });
 
-await test('closing: tally block verifies and anyone can recompute the result', async () => {
-  // a ballot that copies someone else's ciphertext must come out informal
-  const an0 = await VC.analyse(finalBlocks);
-  const copyVictim = finalBlocks.find(b => b.type === 'ballot');
-  const fresh = await VC.createBallot(an0, supporters[2], [0]);
-  assert.notEqual(fresh.block.box.ct, copyVictim.box.ct);
-  const an = await VC.analyse([...finalBlocks, fresh.block]);
+let tallyBlock;
+await test('closing publishes anonymous ballots and a result anyone can recompute', async () => {
+  // w2 copies t0's ciphertext into a ballot of their own: it cannot be opened under their key, so it is set aside
+  const k = VC.parseTicket(walk[2].ticket);
+  const copy = await VC.signBlock({ v: 1, type: 'ballot', election: el.id, parents: [el.id], voter: k.pub, box: cast.t0.block.box }, k.pub, k.priv);
+  open = await add(open, copy);
   const other = await VC.createElection(spec);
-  await assert.rejects(VC.createTally(an, other.organiserKey), /different election/);
-  await assert.rejects(VC.createTally(an, { ...el.organiserKey, encPriv: other.organiserKey.encPriv }), /not the key/);
-  const tally = await VC.createTally(an, el.organiserKey);
-  const fin = await VC.analyse([...an.blocks, tally.block]);
-  assert.deepEqual(fin.errors, []);
-  assert.equal(fin.resultMatches, true);
-  assert.equal(fin.tally, tally.id);
-  // Members: Ann 4 (3x Ann>Bob, 1x Ann>Bob>Cy), Bob 1, Cy 1; quota 3 -> Ann, then Bob on Ann's surplus
-  const official = fin.count.scopes.find(s => s.key === 'official');
-  assert.equal(official.ballots, 6);
-  assert.deepEqual(official.elected, [0, 1]);
-  assert.deepEqual(fin.count.scopes.map(s => s.key), ['official', 'all', 'pool:0', 'pool:1']);
-  assert.equal(fin.count.scopes.find(s => s.key === 'pool:1').ballots, 3);
-  // an individual can find their ballot in the count with their ranking intact
-  const mine = fin.count.formal.find(b => b.id === firstBallotId);
-  assert.deepEqual(mine.ranking, [0, 1]);
-  assert.ok(official.outcome.has(firstBallotId));
-  await assert.rejects(VC.createBallot(fin, members[0], [0]), /closed/);
-  await assert.rejects(VC.createTally(fin, el.organiserKey), /closed/);
-  finalBlocks = fin.blocks;
-  lateBlock = tally;
+  await assert.rejects(VC.createTally(open, other.organiserKey), /different election/);
+  await assert.rejects(VC.createTally(open, { ...el.organiserKey, encPriv: other.organiserKey.encPriv }), /not the key/);
+  const t = await VC.createTally(open, el.organiserKey);
+  tallyBlock = t.block;
+  final = await add(open, t.block);
+  assert.deepEqual(final.errors, []);
+  assert.equal(final.tally, t.id);
+  // the closing block names no voter key, and carries no secret key
+  const text = JSON.stringify(t.block);
+  for (const v of final.voted.keys()) assert.equal(text.includes(v), false);
+  assert.equal(text.includes(el.organiserKey.encPriv), false);
+  assert.equal(text.includes(el.organiserKey.sigPriv), false);
+  // counted: Verified = t0,t1,t2,w0 (4); Unverified = w1 (1) + the unreadable copy (set aside)
+  assert.deepEqual(t.block.informal, [await VC.blockId(copy)]);
+  assert.deepEqual(final.count.formal, [4, 1]);
+  assert.deepEqual(t.block.revealed.map(p => p.map(l => l.length)), [[4, 4], [1, 1]]);
+  assert.deepEqual(final.count.scopes.map(s => s.key), ['all', 'pool:0', 'pool:1']);
+  // President, all pools: Ann 2 (t0,t1), Bob 2 (t2,w0), w1 blank -> 4 votes, quota 3, tie resolved deterministically
+  const pres = final.count.scopes[0].races[0];
+  assert.equal(pres.ballots, 4); assert.equal(pres.abstained, 1); assert.equal(String(pres.quota), '3');
+  assert.equal(pres.elected.length, 1);
+  // Committee, verified only: Di 2 (t0,t1), Ed 1 (t2), Gus 1 (w0); quota 2 -> Di, then one more
+  const com = final.count.scopes[1].races[1];
+  assert.equal(com.elected[0], 0); assert.equal(com.elected.length, 2);
+  await assert.rejects(VC.createBallot(final, walk[2].ticket, [[0], []]), /closed/);
+  await assert.rejects(VC.createTally(final, el.organiserKey), /closed/);
+  await assert.rejects(VC.createAdmit(final, el.organiserKey, [{ voter: walk[1].pub, pool: 0 }]), /closed/);
 });
 
-await test('after closing: wrong declared result, late ballots and a second tally are all detected', async () => {
-  const fin = await VC.analyse(finalBlocks);
-  const tallyBlock = fin.info.get(fin.tally).block;
-  // organiser declares a different winner but signs it properly: caught by recomputation
-  const { sig, ...body } = tallyBlock;
-  assert.equal((await VC.analyse([...finalBlocks.filter(b => b !== tallyBlock), { ...tallyBlock, results: { ...body.results, formal: 99 } }])).tally, null);
-  // a ballot that never reached the organiser is visible as not counted
-  const spare = await VC.createElection(spec); void spare;
-  const pre = await VC.analyse(finalBlocks.filter(b => b.type !== 'tally'));
-  const two = await VC.createTally(await VC.analyse(pre.blocks.slice(0, 3)), el.organiserKey);
-  const both = await VC.analyse([...finalBlocks, two.block]);
+const find = async (rev, code, ri) => { const c = await VC.codeFor(code, ri); for (const [pi, p] of rev.entries()) { const e = p[ri].find(x => x.c === c); if (e) return { pool: pi, r: e.r }; } return null; };
+await test('a voter finds their own ballot with their receipt, per position, in the right pool', async () => {
+  for (const [name, pool] of [['t0', 0], ['t2', 0], ['w0', 0], ['w1', 1]]) {
+    for (const ri of [0, 1]) {
+      const hit = await find(tallyBlock.revealed, cast[name].code, ri);
+      assert.deepEqual(hit, { pool, r: cast[name].choices[ri] }, name + ' position ' + ri);
+    }
+  }
+  // the codes for the two positions are unrelated, so a ballot cannot be reassembled across positions
+  assert.notEqual(await VC.codeFor(cast.t0.code, 0), await VC.codeFor(cast.t0.code, 1));
+  assert.equal(await find(tallyBlock.revealed, 'AAAAAAAAAAAAAAAAAAAAAA', 0), null);
+  // the count traces each anonymous ballot
+  assert.ok(final.count.scopes[0].races[1].outcome.has(await VC.codeFor(cast.t0.code, 1)));
+});
+
+const resign = b => VC.signBlock(b, el.genesis.orgPub, el.organiserKey.sigPriv);
+const pre = () => final.blocks.filter(b => b.type !== 'tally');
+await test('a dishonest closing block is caught: wrong result, dropped ballot, moved ballot', async () => {
+  const b = body(tallyBlock);
+  const lie = JSON.parse(JSON.stringify(b)); lie.results.scopes[0].races[0].elected = [2];
+  assert.match((await VC.analyse([...pre(), await resign(lie)])).errors.join(' '), /does NOT match/);
+  const dropped = JSON.parse(JSON.stringify(b)); dropped.revealed[0].forEach(l => l.pop());
+  assert.match((await VC.analyse([...pre(), await resign(dropped)])).errors.join(' '), /does not match the number of ballots/);
+  const moved = JSON.parse(JSON.stringify(b)); moved.revealed[1][0].push(moved.revealed[0][0].pop()); moved.revealed[1][1].push(moved.revealed[0][1].pop());
+  moved.revealed.forEach(p => p.forEach(l => l.sort((x, y) => x.c < y.c ? -1 : 1)));
+  assert.match((await VC.analyse([...pre(), await resign(moved)])).errors.join(' '), /does not match the number of ballots/);
+  // someone other than the organiser cannot close
+  const k = VC.parseTicket(T[0]);
+  const fake = await VC.analyse([...pre(), await VC.signBlock(b, k.pub, k.priv)]);
+  assert.equal(fake.tally, null);
+});
+
+await test('a silently altered ballot passes the public checks but its voter sees it with their receipt', async () => {
+  // organiser rewrites t0's committee ranking and recomputes an internally consistent closing block
+  const b = JSON.parse(JSON.stringify(body(tallyBlock)));
+  const mine = await VC.codeFor(cast.t0.code, 1);
+  b.revealed[0][1].find(e => e.c === mine).r = [3];
+  const trial = await VC.analyse([...pre(), await resign(b)]);
+  const fixed = { ...b, results: { scopes: trial.count.scopes.map(s => ({ key: s.key, races: s.races.map(r => ({ ballots: r.ballots, quota: String(r.quota), elected: r.elected })) })) } };
+  const an = await VC.analyse([...pre(), await resign(fixed)]);
+  assert.deepEqual(an.errors, []);
+  const hit = await find(an.count.revealed, cast.t0.code, 1);
+  assert.notDeepEqual(hit.r, cast.t0.choices[1]);
+});
+
+await test('an omitted ballot, a late ballot and a second closing block are all visible', async () => {
+  // organiser closes without merging w1's file
+  const without = await VC.analyse(pre().filter(b => b !== cast.w1.block));
+  const early = await VC.createTally(without, el.organiserKey);
+  const an = await VC.analyse([...without.blocks, early.block, cast.w1.block]);
+  assert.equal(an.info.get(cast.w1.id).late, true);
+  assert.equal(an.voted.has(walk[1].pub), false);
+  const both = await VC.analyse([...final.blocks, early.block]);
   assert.equal(both.tallies.length, 2);
   assert.match(both.errors.join(' '), /different closing blocks/);
-  // an honest-looking but early tally leaves later ballots marked as not counted
-  const early = await VC.analyse([...pre.blocks, two.block]);
-  assert.ok([...early.info.values()].some(n => n.late));
-  // a ballot built on top of the tally is rejected
-  const bad = { v: 1, type: 'ballot', election: fin.id, parents: [fin.tally], voter: tallyBlock.encPriv, box: {} };
-  const r = await VC.analyse([...finalBlocks, bad]);
-  assert.equal([...r.info.values()].filter(n => !n.valid).length, 1);
-});
-
-await test('a correctly signed tally with a false result is flagged', async () => {
-  const pre = await VC.analyse(finalBlocks.filter(b => b.type !== 'tally'));
-  // re-sign a lying tally using the real organiser key (simulates a dishonest organiser)
-  const honest = await VC.createTally(pre, el.organiserKey);
-  const orig = VC.canon(honest.block.results);
-  const lie = JSON.parse(orig); lie.scopes[0].elected = [3, 2];
-  // sign by going through createTally's signer: patch results then sign manually with WebCrypto
-  const { sig, ...body } = honest.block; body.results = lie;
-  const g = pre.genesis, raw = Buffer.from(g.orgPub, 'base64url');
-  const jwk = { kty: 'EC', crv: 'P-256', x: raw.subarray(0, 32).toString('base64url'), y: raw.subarray(32).toString('base64url'), d: el.organiserKey.sigPriv };
-  const k = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
-  const s = Buffer.from(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, k, new TextEncoder().encode(VC.canon(body)))).toString('base64url');
-  const an = await VC.analyse([...pre.blocks, { ...body, sig: s }]);
-  assert.equal(an.resultMatches, false);
-  assert.match(an.errors.join(' '), /does NOT match/);
-});
-
-await test('self-registered voter keys work alongside generated tickets', async () => {
-  const k = await VC.newVoterKey();
-  const e2 = await VC.createElection({ title: 'Reg', candidates: ['X', 'Y'], seats: 1, pools: [{ name: 'P', binding: true, generate: 1, registered: [k.pubString] }] });
-  const an = await VC.analyse([e2.genesis]);
-  const v = await VC.createBallot(an, k.ticket, [1, 0]);
-  const fin0 = await VC.analyse([e2.genesis, v.block]);
-  const t = await VC.createTally(fin0, e2.organiserKey);
-  const fin = await VC.analyse([...fin0.blocks, t.block]);
-  assert.deepEqual(fin.errors, []);
-  assert.deepEqual(fin.count.scopes[0].elected, [1]);
-  await assert.rejects(VC.createElection({ title: 'x', candidates: ['A'], seats: 2, pools: [{ name: 'P', binding: true, generate: 1 }] }), /Open positions/);
-  await assert.rejects(VC.createElection({ title: 'x', candidates: ['A'], seats: 1, pools: [{ name: 'P', binding: false, generate: 1 }] }), /binding/);
+  const after = { v: 1, type: 'ballot', election: el.id, parents: [final.tally], voter: walk[1].pub, box: cast.w1.block.box };
+  const k = VC.parseTicket(walk[1].ticket);
+  const r = await add(final, await VC.signBlock(after, k.pub, k.priv));
+  assert.equal([...r.info.values()].find(n => !n.valid).reason, 'added after the election was closed');
 });
 
 console.log(`\n${passed} passed${process.exitCode ? ', SOME FAILED' : ''}`);
