@@ -1,0 +1,868 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Votechain</title>
+<style>
+:root {
+  --bg: #f5f4f0; --card: #ffffff; --ink: #1d1f24; --muted: #646a76; --line: #dcdad3;
+  --accent: #2f5fd0; --accent-ink: #ffffff; --ok: #1d7a46; --bad: #b3261e; --warn: #9a6200;
+  --ok-bg: #e4f3ea; --bad-bg: #fbe9e7; --warn-bg: #fbf1d9; --code: #efeee9;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171b; --card: #1e2127; --ink: #e8e8ea; --muted: #9aa0ad; --line: #33373f;
+    --accent: #7fa2ff; --accent-ink: #10131a; --ok: #6dd39a; --bad: #ff8a80; --warn: #f0c060;
+    --ok-bg: #173324; --bad-bg: #3a1c1a; --warn-bg: #3a2f14; --code: #272b33;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, "Segoe UI", sans-serif; }
+header { padding: 20px 16px 0; max-width: 980px; margin: 0 auto; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: 17px; margin: 0 0 10px; }
+h3 { font-size: 15px; margin: 18px 0 6px; }
+nav { max-width: 980px; margin: 14px auto 0; padding: 0 16px; display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+nav button { border: 0; background: none; color: var(--muted); font: inherit; padding: 8px 12px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+nav button.on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+main { max-width: 980px; margin: 0 auto; padding: 16px; }
+section { display: none; } section.on { display: block; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+.muted { color: var(--muted); } .small { font-size: 13px; }
+.pill { display: inline-block; padding: 1px 9px; border-radius: 99px; font-size: 12.5px; font-weight: 600; background: var(--code); color: var(--muted); }
+.pill.ok { background: var(--ok-bg); color: var(--ok); } .pill.bad { background: var(--bad-bg); color: var(--bad); } .pill.warn { background: var(--warn-bg); color: var(--warn); }
+.note { border-radius: 8px; padding: 9px 12px; margin: 8px 0; background: var(--code); }
+.note.ok { background: var(--ok-bg); color: var(--ok); } .note.bad { background: var(--bad-bg); color: var(--bad); } .note.warn { background: var(--warn-bg); color: var(--warn); }
+code, .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+code { background: var(--code); padding: 1px 5px; border-radius: 4px; word-break: break-all; }
+button.btn { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--ink); padding: 7px 13px; border-radius: 7px; cursor: pointer; }
+button.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button.btn.danger { background: var(--bad); color: #fff; border-color: var(--bad); }
+button.btn:disabled { opacity: .5; cursor: not-allowed; }
+button.mini { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+input[type=text], input[type=number], input[type=password], textarea, select {
+  font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; width: 100%; }
+textarea { min-height: 70px; resize: vertical; }
+label { display: block; font-weight: 600; font-size: 13.5px; margin: 12px 0 4px; }
+label .muted { font-weight: 400; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.drop { border: 2px dashed var(--line); border-radius: 10px; padding: 22px; text-align: center; color: var(--muted); }
+.drop.over { border-color: var(--accent); color: var(--ink); }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 5px 9px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.elected { color: var(--ok); font-weight: 700; } td.excluded { color: var(--muted); text-decoration: line-through; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+dt { color: var(--muted); } dd { margin: 0; min-width: 0; }
+ol.rank { list-style: none; padding: 0; margin: 6px 0; }
+ol.rank li { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 6px; background: var(--bg); }
+ol.rank li .n { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-weight: 700; font-size: 13px; flex: none; }
+ol.rank li.un .n { background: var(--code); color: var(--muted); }
+ol.rank li .name { flex: 1; min-width: 0; }
+.poolrow { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 8px; display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 8px; align-items: end; }
+.poolrow .wide { grid-column: 1 / -1; }
+.poolrow label { margin-top: 0; }
+@media (max-width: 640px) { .poolrow { grid-template-columns: 1fr 1fr; } }
+details summary { cursor: pointer; font-weight: 600; }
+</style>
+</head>
+<body>
+<header><h1>Votechain</h1><span id="pill" class="pill">no election loaded</span><span id="pillTitle" class="muted"></span></header>
+<nav id="nav">
+  <button data-tab="chain" class="on">Chain file</button>
+  <button data-tab="vote">Vote</button>
+  <button data-tab="check">Check my vote</button>
+  <button data-tab="results">Results</button>
+  <button data-tab="organiser">Organiser</button>
+</nav>
+<main>
+
+<section id="tab-chain" class="on">
+  <div class="card">
+    <div id="drop" class="drop">
+      <p style="margin:0 0 8px"><b>Drop chain files here</b> to load them. Dropping more files for the same election merges them.</p>
+      <input type="file" id="fileIn" multiple accept=".json,application/json">
+    </div>
+    <div id="loadMsg"></div>
+  </div>
+  <div id="chainSummary"></div>
+</section>
+
+<section id="tab-vote"><div id="voteBody"></div>
+  <div class="card">
+    <details>
+      <summary>No ticket yet? Make your own voter key</summary>
+      <p class="small muted">Use this only if the organiser asked voters to register their own keys before the election was created.
+      Send the <b>public key</b> to the organiser. Keep the <b>ticket</b> secret: it is what lets you vote.</p>
+      <button class="btn" id="genKey">Generate voter key</button>
+      <div id="genKeyOut"></div>
+    </details>
+  </div>
+</section>
+
+<section id="tab-check">
+  <div class="card">
+    <h2>Check my vote</h2>
+    <p class="muted small">Paste your ticket, your public key, a ballot ID or your receipt. Everything is checked locally against the chain file you loaded.</p>
+    <textarea id="checkIn" spellcheck="false" autocomplete="off" placeholder="vt1_…  or  vp1_…  or  ballot ID"></textarea>
+    <p><button class="btn primary" id="checkBtn">Check</button></p>
+    <div id="checkOut"></div>
+  </div>
+</section>
+
+<section id="tab-results"><div id="resultsBody"></div></section>
+
+<section id="tab-organiser">
+  <div class="card">
+    <h2>Call a new election</h2>
+    <label>Title</label><input type="text" id="eTitle" placeholder="Committee election 2027">
+    <label>Description <span class="muted">(optional)</span></label><textarea id="eDesc"></textarea>
+    <label>Candidates <span class="muted">(one per line; fixed once created)</span></label><textarea id="eCands" placeholder="Alex&#10;Blake&#10;Casey"></textarea>
+    <label>Open positions</label><input type="number" id="eSeats" min="1" value="1" style="max-width:120px">
+    <label>Voter pools</label>
+    <p class="small muted" style="margin:0 0 8px">Every voter belongs to exactly one pool. Binding pools decide the official result; advisory pools are counted and published separately.
+    Either let this page generate tickets for you to hand out, or paste public keys that voters generated themselves.</p>
+    <div id="pools"></div>
+    <button class="mini" id="addPool">+ Add pool</button>
+    <label>Passphrase for the organiser key file <span class="muted">(recommended)</span></label>
+    <input type="password" id="ePass" autocomplete="new-password" style="max-width:320px">
+    <p><button class="btn primary" id="createBtn">Create election</button></p>
+    <div id="createOut"></div>
+  </div>
+  <div class="card">
+    <h2>Close the election and publish the count</h2>
+    <p class="muted small">Load and merge every chain file you have received first (Chain file tab). Closing releases the ballot decryption key into the final block so anyone can re-run the count. This cannot be undone.</p>
+    <label>Organiser key file</label><input type="file" id="orgKeyIn" accept=".json,application/json">
+    <label>Passphrase <span class="muted">(if the key file has one)</span></label><input type="password" id="orgPass" autocomplete="off" style="max-width:320px">
+    <p><button class="btn danger" id="closeBtn">Close election</button></p>
+    <div id="closeOut"></div>
+  </div>
+</section>
+</main>
+
+<script id="core">
+/* Votechain core: no DOM access. Runs in browsers and in Node 20+ (tests extract this block). */
+const VC = (() => {
+'use strict';
+const subtle = globalThis.crypto.subtle;
+const te = new TextEncoder(), td = new TextDecoder();
+const FORMAT = 'votechain/1';
+const EC = { name: 'ECDSA', namedCurve: 'P-256' }, DH = { name: 'ECDH', namedCurve: 'P-256' };
+const KEYCHECK = 'votechain-keycheck';
+
+/* ---------- encoding ---------- */
+function b64u(bytes) { let s = ''; for (const b of bytes) s += String.fromCharCode(b); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function unb64u(str) {
+  if (typeof str !== 'string' || !/^[A-Za-z0-9_-]*$/.test(str)) throw new Error('bad base64url');
+  const s = atob(str.replace(/-/g, '+').replace(/_/g, '/')); const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i); return out;
+}
+function concat(...arrs) { const out = new Uint8Array(arrs.reduce((n, a) => n + a.length, 0)); let o = 0; for (const a of arrs) { out.set(a, o); o += a.length; } return out; }
+function pad32(a) { if (a.length > 32) throw new Error('bad key'); const out = new Uint8Array(32); out.set(a, 32 - a.length); return out; }
+const rand = n => globalThis.crypto.getRandomValues(new Uint8Array(n));
+/* Canonical JSON: sorted keys, integers only. This is what gets hashed and signed. */
+function canon(v) {
+  if (v === null || typeof v === 'boolean' || typeof v === 'string') return JSON.stringify(v);
+  if (typeof v === 'number') { if (!Number.isSafeInteger(v)) throw new Error('non-integer number'); return String(v); }
+  if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+  if (typeof v === 'object') return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}';
+  throw new Error('unsupported value');
+}
+async function sha256hex(str) { const d = new Uint8Array(await subtle.digest('SHA-256', te.encode(str))); return [...d].map(b => b.toString(16).padStart(2, '0')).join(''); }
+
+/* ---------- keys ---------- */
+async function genKeyPair(alg) {
+  const kp = await subtle.generateKey(alg, true, alg === EC ? ['sign', 'verify'] : ['deriveBits']);
+  const j = await subtle.exportKey('jwk', kp.privateKey);
+  return { pub: b64u(concat(pad32(unb64u(j.x)), pad32(unb64u(j.y)))), priv: b64u(pad32(unb64u(j.d))) };
+}
+function pubJwk(pub) { const b = unb64u(pub); if (b.length !== 64) throw new Error('bad public key'); return { kty: 'EC', crv: 'P-256', x: b64u(b.slice(0, 32)), y: b64u(b.slice(32)) }; }
+function isPub(p) { try { return typeof p === 'string' && p.length === 86 && b64u(unb64u(p)) === p; } catch { return false; } }
+async function signStr(str, pub, priv) {
+  const k = await subtle.importKey('jwk', { ...pubJwk(pub), d: priv }, EC, false, ['sign']);
+  return b64u(new Uint8Array(await subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, k, te.encode(str))));
+}
+async function verifyStr(str, sig, pub) {
+  try {
+    const k = await subtle.importKey('jwk', pubJwk(pub), EC, false, ['verify']);
+    return await subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, k, unb64u(sig), te.encode(str));
+  } catch { return false; }
+}
+function makeTicket(kp) { return 'vt1_' + b64u(concat(unb64u(kp.priv), unb64u(kp.pub))); }
+function parseTicket(str) {
+  const m = /^vt1_([A-Za-z0-9_-]{128})$/.exec(String(str).trim());
+  if (!m) throw new Error('That does not look like a voting ticket (it should start with vt1_).');
+  const b = unb64u(m[1]); return { priv: b64u(b.slice(0, 32)), pub: b64u(b.slice(32)) };
+}
+function parsePub(str) {
+  const m = /^(?:vp1_)?([A-Za-z0-9_-]{86})$/.exec(String(str).trim());
+  if (!m) throw new Error('Not a voter public key: ' + String(str).slice(0, 24) + '…');
+  return b64u(unb64u(m[1]));
+}
+async function newVoterKey() { const kp = await genKeyPair(EC); return { pub: kp.pub, pubString: 'vp1_' + kp.pub, ticket: makeTicket(kp) }; }
+
+/* ---------- public-key encryption (ephemeral ECDH + HKDF + AES-GCM) ---------- */
+async function aesFromShared(shared, eph) {
+  const k = await subtle.importKey('raw', shared, 'HKDF', false, ['deriveKey']);
+  return subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: te.encode(FORMAT + '|' + eph) }, k, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function seal(encPub, aad, bytes) {
+  const e = await subtle.generateKey(DH, true, ['deriveBits']);
+  const j = await subtle.exportKey('jwk', e.publicKey);
+  const eph = b64u(concat(pad32(unb64u(j.x)), pad32(unb64u(j.y))));
+  const peer = await subtle.importKey('jwk', pubJwk(encPub), DH, false, []);
+  const key = await aesFromShared(await subtle.deriveBits({ name: 'ECDH', public: peer }, e.privateKey, 256), eph);
+  const iv = rand(12);
+  const ct = await subtle.encrypt({ name: 'AES-GCM', iv, additionalData: te.encode(aad) }, key, bytes);
+  return { eph, iv: b64u(iv), ct: b64u(new Uint8Array(ct)) };
+}
+async function unsealer(encPub, encPriv) {
+  const priv = await subtle.importKey('jwk', { ...pubJwk(encPub), d: encPriv }, DH, false, ['deriveBits']);
+  return async (aad, box) => {
+    const peer = await subtle.importKey('jwk', pubJwk(box.eph), DH, false, []);
+    const key = await aesFromShared(await subtle.deriveBits({ name: 'ECDH', public: peer }, priv, 256), box.eph);
+    return new Uint8Array(await subtle.decrypt({ name: 'AES-GCM', iv: unb64u(box.iv), additionalData: te.encode(aad) }, key, unb64u(box.ct)));
+  };
+}
+const isBox = b => !!b && typeof b === 'object' && isPub(b.eph) && typeof b.iv === 'string' && typeof b.ct === 'string';
+/* Proves a decryption key really is the election key, using the test message sealed into the genesis block. */
+async function checkEncKey(g, encPriv) {
+  try { const open = await unsealer(g.encPub, encPriv); return td.decode(await open('keycheck|' + g.orgPub, g.keyCheck)) === KEYCHECK; } catch { return false; }
+}
+
+/* ---------- blocks ---------- */
+function bodyOf(block) { const { sig, ...body } = block; return body; }
+async function blockId(block) { return sha256hex(canon(bodyOf(block))); }
+async function signBlock(body, pub, priv) {
+  const sig = await signStr(canon(body), pub, priv);
+  if (!await verifyStr(canon(body), sig, pub)) throw new Error('The private key does not match its public key.');
+  return { ...body, sig };
+}
+const isStr = (s, max = 2000) => typeof s === 'string' && s.length <= max;
+function checkGenesis(g) {
+  if (g.v !== 1 || g.type !== 'genesis') return 'not a version 1 genesis block';
+  if (!isStr(g.title, 200) || !g.title.trim()) return 'the election needs a title';
+  if (!isStr(g.description, 5000)) return 'bad description';
+  const c = g.candidates;
+  if (!Array.isArray(c) || c.length < 1 || !c.every(x => isStr(x, 200) && x.trim())) return 'bad candidate list';
+  if (new Set(c).size !== c.length) return 'candidate names must be unique';
+  if (!Number.isSafeInteger(g.seats) || g.seats < 1 || g.seats > c.length) return 'open positions must be between 1 and the number of candidates';
+  const p = g.pools;
+  if (!Array.isArray(p) || !p.length || !p.every(x => x && isStr(x.name, 100) && x.name.trim() && typeof x.binding === 'boolean')) return 'bad pool list';
+  if (new Set(p.map(x => x.name)).size !== p.length) return 'pool names must be unique';
+  if (!p.some(x => x.binding)) return 'at least one pool must be binding';
+  const r = g.roll;
+  if (!Array.isArray(r) || !r.length) return 'the voter roll is empty';
+  for (let i = 0; i < r.length; i++) {
+    if (!r[i] || !isPub(r[i].pub) || !Number.isSafeInteger(r[i].pool) || r[i].pool < 0 || r[i].pool >= p.length) return 'bad voter roll entry';
+    if (i && !(r[i - 1].pub < r[i].pub)) return 'the same voter key appears twice on the roll (or the roll is unsorted)';
+  }
+  if (!isPub(g.orgPub) || !isPub(g.encPub) || !isBox(g.keyCheck)) return 'bad organiser keys';
+  return null;
+}
+function checkRanking(r, nc) {
+  if (!Array.isArray(r) || r.length < 1 || r.length > nc || !r.every(x => Number.isSafeInteger(x) && x >= 0 && x < nc) || new Set(r).size !== r.length)
+    throw new Error('A ballot must rank at least one candidate, each at most once.');
+}
+
+/* spec: {title, description, candidates[], seats, pools:[{name, binding, generate, registered[]}]} */
+async function createElection(spec) {
+  const org = await genKeyPair(EC), enc = await genKeyPair(DH);
+  const roll = [], tickets = [];
+  for (const [i, p] of spec.pools.entries()) {
+    for (let k = 0; k < (p.generate || 0); k++) { const kp = await genKeyPair(EC); roll.push({ pub: kp.pub, pool: i }); tickets.push({ pool: p.name, voter: kp.pub, ticket: makeTicket(kp) }); }
+    for (const s of p.registered || []) roll.push({ pub: parsePub(s), pool: i });
+  }
+  roll.sort((a, b) => a.pub < b.pub ? -1 : a.pub > b.pub ? 1 : 0);
+  const body = {
+    v: 1, type: 'genesis', title: String(spec.title).trim(), description: String(spec.description || ''),
+    candidates: spec.candidates.map(s => String(s).trim()), seats: spec.seats,
+    pools: spec.pools.map(p => ({ name: String(p.name).trim(), binding: !!p.binding })), roll,
+    orgPub: org.pub, encPub: enc.pub, keyCheck: await seal(enc.pub, 'keycheck|' + org.pub, te.encode(KEYCHECK)),
+    created: new Date().toISOString(),
+  };
+  const err = checkGenesis(body); if (err) throw new Error(err[0].toUpperCase() + err.slice(1) + '.');
+  const genesis = await signBlock(body, org.pub, org.priv), id = await blockId(genesis);
+  return { genesis, id, tickets, organiserKey: { format: 'votechain-organiser-key/1', election: id, title: body.title, sigPriv: org.priv, encPriv: enc.priv } };
+}
+
+async function pbkdf(pass, salt, iterations) {
+  const k = await subtle.importKey('raw', te.encode(pass), 'PBKDF2', false, ['deriveKey']);
+  return subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, k, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function protectKey(key, pass) {
+  const salt = rand(16), iv = rand(12), iterations = 600000;
+  const ct = await subtle.encrypt({ name: 'AES-GCM', iv }, await pbkdf(pass, salt, iterations), te.encode(JSON.stringify({ sigPriv: key.sigPriv, encPriv: key.encPriv })));
+  return { format: key.format, election: key.election, title: key.title, protected: { kdf: 'PBKDF2-SHA256', iterations, salt: b64u(salt), iv: b64u(iv), ct: b64u(new Uint8Array(ct)) } };
+}
+async function unprotectKey(file, pass) {
+  if (!file || file.format !== 'votechain-organiser-key/1') throw new Error('That is not an organiser key file.');
+  if (!file.protected) return file;
+  const p = file.protected;
+  try {
+    const pt = await subtle.decrypt({ name: 'AES-GCM', iv: unb64u(p.iv) }, await pbkdf(pass || '', unb64u(p.salt), p.iterations), unb64u(p.ct));
+    return { format: file.format, election: file.election, title: file.title, ...JSON.parse(td.decode(pt)) };
+  } catch { throw new Error('Wrong passphrase for the organiser key file.'); }
+}
+
+/* ---------- exact arithmetic for the count ---------- */
+const gcd = (a, b) => { if (a < 0n) a = -a; while (b) [a, b] = [b, a % b]; return a; };
+class Q {
+  constructor(n, d = 1n) { const g = gcd(n, d) || 1n; this.n = n / g; this.d = d / g; }
+  add(o) { return new Q(this.n * o.d + o.n * this.d, this.d * o.d); }
+  sub(o) { return new Q(this.n * o.d - o.n * this.d, this.d * o.d); }
+  mul(o) { return new Q(this.n * o.n, this.d * o.d); }
+  div(o) { return new Q(this.n * o.d, this.d * o.n); }
+  cmp(o) { const x = this.n * o.d - o.n * this.d; return x < 0n ? -1 : x > 0n ? 1 : 0; }
+  toString(dp = 4) {
+    if (this.d === 1n) return String(this.n);
+    const s = String(this.n * 10n ** BigInt(dp) / this.d).padStart(dp + 1, '0');
+    return (s.slice(0, -dp) + '.' + s.slice(-dp)).replace(/\.?0+$/, '') || '0';
+  }
+}
+const Q0 = new Q(0n), Q1 = new Q(1n);
+
+/* Single transferable vote: Droop quota, weighted inclusive Gregory surplus transfers, exact fractions.
+   ballots: [{id, ranking:[candidateIndex…]}]; lot: per-candidate hex string used only to break exact ties. */
+function stv(nc, seats, ballots, lot) {
+  const quota = new Q(BigInt(Math.floor(ballots.length / (seats + 1)) + 1));
+  const res = { quota, elected: [], rounds: [], outcome: new Map() };
+  if (!ballots.length) return res;
+  const status = Array(nc).fill('hopeful'), piles = Array.from({ length: nc }, () => []), fixed = Array(nc).fill(null), history = [], pending = [];
+  let exhausted = Q0;
+  const items = ballots.map(b => ({ b, w: Q1, pos: 0, trail: [], exh: Q0 }));
+  const place = it => {
+    const r = it.b.ranking;
+    while (it.pos < r.length && status[r[it.pos]] !== 'hopeful') it.pos++;
+    if (it.pos < r.length) piles[r[it.pos]].push(it); else { exhausted = exhausted.add(it.w); it.exh = it.w; it.w = Q0; }
+  };
+  items.forEach(place);
+  /* Highest (or lowest) of cands by this round's totals, then by the most recent earlier round where they differ, then by lot. */
+  const pick = (cands, lowest) => {
+    let pool = cands.slice();
+    for (let r = history.length - 1; r >= 0 && pool.length > 1; r--) {
+      const t = history[r]; let best = pool[0];
+      for (const c of pool) { const k = t[c].cmp(t[best]); if (lowest ? k < 0 : k > 0) best = c; }
+      pool = pool.filter(c => t[c].cmp(t[best]) === 0);
+    }
+    if (pool.length === 1) return { c: pool[0], byLot: false };
+    pool.sort((a, b) => lot[a] < lot[b] ? -1 : 1);
+    return { c: lowest ? pool[0] : pool[pool.length - 1], byLot: true };
+  };
+  const hopefuls = () => status.map((s, c) => c).filter(c => status[c] === 'hopeful');
+  for (;;) {
+    const totals = piles.map((p, c) => fixed[c] || p.reduce((s, it) => s.add(it.w), Q0));
+    history.push(totals);
+    const round = { totals, exhausted, actions: [], status: null };
+    res.rounds.push(round);
+    const elect = (list, type) => { while (list.length && res.elected.length < seats) { const { c, byLot } = pick(list, false); list = list.filter(x => x !== c); status[c] = 'elected'; res.elected.push(c); round.actions.push({ type, c, byLot }); if (type === 'elected') pending.push(c); } };
+    elect(hopefuls().filter(c => totals[c].cmp(quota) >= 0), 'elected');
+    const hope = hopefuls();
+    if (res.elected.length < seats && hope.length <= seats - res.elected.length) elect(hope, 'elected-remaining');
+    if (res.elected.length >= seats) { round.status = status.slice(); break; }
+    if (pending.length) {
+      const { c, byLot } = pick(pending, false); pending.splice(pending.indexOf(c), 1);
+      const surplus = totals[c].sub(quota), factor = surplus.div(totals[c]), pile = piles[c];
+      piles[c] = []; fixed[c] = quota;
+      for (const it of pile) { const moved = it.w.mul(factor); it.trail.push({ c, w: it.w.sub(moved) }); it.w = moved; if (moved.n > 0n) place(it); }
+      round.actions.push({ type: 'surplus', c, amount: surplus, byLot });
+    } else {
+      const { c, byLot } = pick(hope, true); status[c] = 'excluded';
+      const pile = piles[c]; piles[c] = []; pile.forEach(place);
+      round.actions.push({ type: 'excluded', c, byLot });
+    }
+    round.status = status.slice();
+  }
+  piles.forEach((p, c) => p.forEach(it => it.trail.push({ c, w: it.w })));
+  for (const it of items) res.outcome.set(it.b.id, { trail: it.trail, exhausted: it.exh });
+  res.status = status.slice();
+  return res;
+}
+
+/* Runs the count for the official scope (binding pools) and for each pool on its own. */
+async function computeResults(g, eid, formal) {
+  const seed = await sha256hex(eid + '|' + formal.map(b => b.id).join(','));
+  const lot = await Promise.all(g.candidates.map((_, i) => sha256hex(seed + '|' + i)));
+  const all = g.pools.map((_, i) => i), binding = all.filter(i => g.pools[i].binding);
+  const defs = [{ key: 'official', label: 'Official result', pools: binding }];
+  if (g.pools.length > 1) {
+    if (binding.length < all.length) defs.push({ key: 'all', label: 'All pools combined (advisory)', pools: all });
+    all.forEach(i => defs.push({ key: 'pool:' + i, label: 'Pool: ' + g.pools[i].name + (g.pools[i].binding ? '' : ' (advisory)'), pools: [i] }));
+  }
+  return defs.map(d => {
+    const bs = formal.filter(b => d.pools.includes(b.pool));
+    return { ...d, ballots: bs.length, ...stv(g.candidates.length, g.seats, bs, lot) };
+  });
+}
+async function countBallots(an, encPriv) {
+  const g = an.genesis;
+  if (!await checkEncKey(g, encPriv)) throw new Error('That decryption key is not the key for this election.');
+  const open = await unsealer(g.encPub, encPriv), formal = [], informal = [];
+  for (const [voter, id] of an.voted) {
+    const pool = an.rollMap.get(voter);
+    try {
+      const pt = JSON.parse(td.decode(await open(an.id + '|' + voter, an.info.get(id).block.box)));
+      checkRanking(pt.r, g.candidates.length);
+      formal.push({ id, voter, pool, ranking: pt.r });
+    } catch { informal.push({ id, voter, pool }); }
+  }
+  formal.sort((a, b) => a.id < b.id ? -1 : 1);
+  const scopes = await computeResults(g, an.id, formal);
+  const summary = { formal: formal.length, informal: informal.length, scopes: scopes.map(s => ({ key: s.key, pools: s.pools, ballots: s.ballots, quota: String(s.quota), elected: s.elected })) };
+  return { formal, informal, scopes, summary };
+}
+
+/* ---------- chain verification ---------- */
+/* Takes any pile of blocks (one file or several merged) and works out what is valid, what counts and, once closed, the result. */
+async function analyse(rawBlocks) {
+  const an = { errors: [], genesis: null, id: null, info: new Map(), order: [], blocks: [], heads: [], tallies: [], tally: null,
+    rollMap: new Map(), voted: new Map(), turnout: [], count: null, resultMatches: null };
+  const byId = new Map();
+  for (const b of rawBlocks) {
+    try {
+      if (!b || typeof b !== 'object' || Array.isArray(b)) throw 0;
+      const id = await blockId(b), vars = byId.get(id);
+      if (!vars) byId.set(id, [b]); else if (!vars.some(v => v.sig === b.sig)) vars.push(b);
+    } catch { an.errors.push('A malformed block was ignored.'); }
+  }
+  an.blocks = [...byId.values()].map(v => v[0]);
+  const gens = [...byId].filter(([, v]) => v[0].type === 'genesis');
+  if (!gens.length) { if (byId.size) an.errors.push('There is no genesis block here, so these blocks cannot be checked.'); return an; }
+  if (gens.length > 1) { an.errors.push('These blocks come from more than one election.'); return an; }
+  const [gid, gvars] = gens[0];
+  let g = null, gerr = checkGenesis(bodyOf(gvars[0]));
+  if (!gerr) { for (const v of gvars) if (typeof v.sig === 'string' && await verifyStr(canon(bodyOf(v)), v.sig, v.orgPub)) { g = v; break; } if (!g) gerr = 'bad organiser signature'; }
+  if (gerr) { an.errors.push('The genesis block is invalid: ' + gerr + '.'); return an; }
+  an.genesis = g; an.id = gid; g.roll.forEach(r => an.rollMap.set(r.pub, r.pool));
+
+  const info = an.info, children = new Map(), need = new Map();
+  info.set(gid, { id: gid, block: g, type: 'genesis', valid: true, reason: null, parents: [] });
+  let ready = [gid];
+  for (const [id, vars] of byId) {
+    if (id === gid) continue;
+    const b = vars[0], ps = b.parents, n = { id, block: b, vars, type: String(b.type), valid: false, reason: null, orphan: false, parents: [] };
+    info.set(id, n);
+    if (!(Array.isArray(ps) && ps.length && ps.every((p, i) => typeof p === 'string' && (i === 0 || ps[i - 1] < p)))) { n.reason = 'malformed parent list'; n.pre = true; ready.push(id); continue; }
+    n.parents = ps;
+    const missing = ps.find(p => !byId.has(p));
+    if (missing) { n.reason = 'missing parent block ' + missing.slice(0, 10) + '… (merge the file that contains it)'; n.orphan = true; n.pre = true; ready.push(id); continue; }
+    need.set(id, ps.length);
+    for (const p of ps) { if (!children.has(p)) children.set(p, []); children.get(p).push(id); }
+  }
+  const validate = async n => {
+    const b = n.block, ps = n.parents.map(p => info.get(p));
+    const bad = ps.find(p => !p.valid);
+    if (bad) { n.orphan = bad.orphan; return 'builds on an invalid block'; }
+    if (ps.some(p => p.type === 'tally')) return 'added after the election was closed';
+    if (b.v !== 1 || b.election !== gid) return 'belongs to a different election';
+    let signer;
+    if (b.type === 'ballot') { if (!an.rollMap.has(b.voter)) return 'voter is not on the roll'; if (!isBox(b.box)) return 'malformed ballot'; signer = b.voter; }
+    else if (b.type === 'tally') { if (typeof b.encPriv !== 'string' || !b.results || typeof b.results !== 'object') return 'malformed tally'; signer = g.orgPub; }
+    else return 'unknown block type';
+    let ok = null;
+    for (const v of n.vars) if (typeof v.sig === 'string' && await verifyStr(canon(bodyOf(v)), v.sig, signer)) { ok = v; break; }
+    if (!ok) return 'invalid signature';
+    n.block = ok;
+    if (b.type === 'tally' && !await checkEncKey(g, b.encPriv)) return 'the released key is not the election key';
+    return null;
+  };
+  while (ready.length) {
+    ready.sort(); const id = ready.shift(), n = info.get(id);
+    if (id !== gid && !n.pre) { n.reason = await validate(n); n.valid = !n.reason; }
+    an.order.push(id);
+    for (const c of children.get(id) || []) { const k = need.get(c) - 1; need.set(c, k); if (k === 0) ready.push(c); }
+  }
+  an.blocks = an.order.map(id => info.get(id)).filter(n => n.valid || n.orphan).map(n => n.block);
+
+  const validIds = an.order.filter(id => info.get(id).valid);
+  an.tallies = validIds.filter(id => info.get(id).type === 'tally').sort();
+  an.tally = an.tallies[0] || null;
+  if (an.tallies.length > 1) an.errors.push('The organiser has signed ' + an.tallies.length + ' different closing blocks for this election. That should never happen; treat the result as disputed.');
+  const hasChild = new Set();
+  for (const id of validIds) { const n = info.get(id); if (n.type !== 'tally') n.parents.forEach(p => hasChild.add(p)); }
+  an.heads = validIds.filter(id => info.get(id).type !== 'tally' && !hasChild.has(id));
+  const ancestors = id => { const seen = new Set(), stack = [...info.get(id).parents]; while (stack.length) { const x = stack.pop(); if (!seen.has(x)) { seen.add(x); stack.push(...info.get(x).parents); } } return seen; };
+  const scope = an.tally ? ancestors(an.tally) : new Set(validIds);
+  const byVoter = new Map();
+  for (const id of validIds) {
+    const n = info.get(id); if (n.type !== 'ballot') continue;
+    if (!scope.has(id)) { n.late = true; continue; }
+    const v = n.block.voter; if (!byVoter.has(v)) byVoter.set(v, []); byVoter.get(v).push(id);
+  }
+  /* One ballot per voter: a ballot built on top of the same voter's earlier ballot loses to it; otherwise the lowest ID wins. */
+  for (const [voter, ids] of byVoter) {
+    let win = ids[0];
+    if (ids.length > 1) {
+      const anc = new Map(ids.map(id => [id, ancestors(id)]));
+      const first = ids.filter(id => !ids.some(o => anc.get(id).has(o))).sort();
+      win = first[0];
+      for (const id of ids) if (id !== win) info.get(id).superseded = win;
+    }
+    an.voted.set(voter, win);
+  }
+  an.turnout = g.pools.map((_, i) => ({ roll: g.roll.filter(r => r.pool === i).length, voted: [...an.voted.keys()].filter(v => an.rollMap.get(v) === i).length }));
+  if (an.tally) {
+    const t = info.get(an.tally).block;
+    an.count = await countBallots(an, t.encPriv);
+    an.resultMatches = canon(an.count.summary) === canon(t.results);
+    if (!an.resultMatches) an.errors.push('The result declared by the organiser does NOT match the result recomputed from the ballots.');
+  }
+  return an;
+}
+
+async function createBallot(an, ticketStr, ranking) {
+  if (!an.genesis) throw new Error('Load the election chain file first.');
+  if (an.tallies.length) throw new Error('This election is already closed.');
+  const t = parseTicket(ticketStr);
+  if (!an.rollMap.has(t.pub)) throw new Error('This ticket is not on the voter roll for this election.');
+  if (an.voted.has(t.pub)) throw new Error('This ticket has already voted in this chain file. A second ballot would not be counted.');
+  checkRanking(ranking, an.genesis.candidates.length);
+  let s = JSON.stringify({ r: ranking, n: b64u(rand(16)) }); s = s.padEnd(Math.ceil(s.length / 128) * 128, ' ');
+  const body = { v: 1, type: 'ballot', election: an.id, parents: [...an.heads].sort(), voter: t.pub, box: await seal(an.genesis.encPub, an.id + '|' + t.pub, te.encode(s)) };
+  const block = await signBlock(body, t.pub, t.priv);
+  return { block, id: await blockId(block) };
+}
+
+async function createTally(an, key) {
+  if (!an.genesis) throw new Error('Load the election chain file first.');
+  if (an.tallies.length) throw new Error('This election is already closed.');
+  if (key.election !== an.id) throw new Error('This organiser key belongs to a different election.');
+  const count = await countBallots(an, key.encPriv);
+  const body = { v: 1, type: 'tally', election: an.id, parents: [...an.heads].sort(), encPriv: key.encPriv, results: count.summary, closed: new Date().toISOString() };
+  const block = await signBlock(body, an.genesis.orgPub, key.sigPriv);
+  return { block, id: await blockId(block) };
+}
+
+return { FORMAT, analyse, createElection, createBallot, createTally, protectKey, unprotectKey, newVoterKey, parseTicket, parsePub, blockId, stv, Q, canon };
+})();
+</script>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const short = id => esc(String(id).slice(0, 10)) + '…';
+const note = (cls, html) => `<div class="note ${cls}">${html}</div>`;
+const fail = (el, e) => { el.innerHTML = note('bad', esc(e && e.message || e)); };
+let an = null;
+const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'election';
+
+function download(name, text, type = 'application/json') {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+}
+const chainText = () => JSON.stringify({ format: VC.FORMAT, election: an.id, title: an.genesis.title, blocks: an.blocks }, null, 1);
+const chainName = () => `${slug(an.genesis.title)}-${an.tally ? 'final' : an.blocks.length + 'blocks'}-${an.id.slice(0, 6)}.votechain.json`;
+const downloadChain = () => download(chainName(), chainText());
+const cand = i => esc(an.genesis.candidates[i]);
+const rankText = r => r.map((c, i) => `${i + 1}. ${cand(c)}`).join(' &nbsp; ');
+
+async function setChain(blocks) { an = await VC.analyse(blocks); renderAll(); }
+
+/* ---------- loading and merging ---------- */
+async function loadFiles(files) {
+  const msgs = [];
+  for (const f of files) {
+    try {
+      const j = JSON.parse(await f.text());
+      const blocks = Array.isArray(j.blocks) ? j.blocks : j.type ? [j] : null;
+      if (!blocks) throw new Error('not a chain file');
+      const before = an.blocks.length, trial = await VC.analyse(an.blocks.concat(blocks));
+      if (an.genesis && !trial.genesis) throw new Error('it belongs to a different election than the one loaded');
+      an = trial;
+      msgs.push(note(an.genesis ? 'ok' : 'warn', `<b>${esc(f.name)}</b>: ${an.blocks.length - before} new block(s)`));
+    } catch (e) { msgs.push(note('bad', `<b>${esc(f.name)}</b> was not loaded: ${esc(e.message)}`)); }
+  }
+  $('#loadMsg').innerHTML = msgs.join('');
+  renderAll();
+}
+$('#fileIn').addEventListener('change', e => { loadFiles([...e.target.files]); e.target.value = ''; });
+const drop = $('#drop');
+['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => loadFiles([...e.dataTransfer.files]));
+
+/* ---------- chain tab ---------- */
+function renderChain() {
+  const el = $('#chainSummary'), pill = $('#pill');
+  const errs = an.errors.map(e => note('bad', esc(e))).join('');
+  if (!an.genesis) {
+    pill.className = 'pill'; pill.textContent = 'no election loaded'; $('#pillTitle').textContent = '';
+    el.innerHTML = errs + `<p class="muted">Load the chain file you were sent to vote or to check a result. Calling a new election happens on the Organiser tab.</p>`;
+    return;
+  }
+  const g = an.genesis, nodes = an.order.map(id => an.info.get(id)), invalid = nodes.filter(n => !n.valid);
+  const closed = !!an.tally, good = !an.errors.length;
+  pill.className = 'pill ' + (!good ? 'bad' : closed ? 'ok' : 'warn');
+  pill.textContent = !good ? 'problems found' : closed ? 'closed and verified' : 'open';
+  $('#pillTitle').textContent = g.title;
+  const pools = g.pools.map((p, i) => `<tr><td>${esc(p.name)}</td><td>${p.binding ? 'binding' : 'advisory'}</td><td class="num">${an.turnout[i].roll}</td><td class="num">${an.turnout[i].voted}</td></tr>`).join('');
+  const rows = nodes.map((n, i) => {
+    const b = n.block;
+    let what = n.type, st = '<span class="pill ok">valid</span>';
+    if (n.type === 'ballot' && an.rollMap.has(b.voter)) what = `ballot · voter <span class="mono">${short(b.voter)}</span> · ${esc(g.pools[an.rollMap.get(b.voter)].name)}`;
+    if (!n.valid) st = `<span class="pill bad">rejected</span> <span class="small">${esc(n.reason)}</span>`;
+    else if (n.superseded) st = `<span class="pill warn">not counted</span> <span class="small">this voter has another ballot (${short(n.superseded)})</span>`;
+    else if (n.late) st = `<span class="pill warn">not counted</span> <span class="small">not part of the closed chain</span>`;
+    return `<tr><td class="num">${i}</td><td class="mono">${short(n.id)}</td><td>${what}</td><td class="mono">${n.parents.map(short).join(' ') || '–'}</td><td>${st}</td></tr>`;
+  }).join('');
+  el.innerHTML = errs + `
+  <div class="card">
+    <h2>${esc(g.title)}</h2>
+    ${g.description ? `<p style="white-space:pre-wrap">${esc(g.description)}</p>` : ''}
+    <dl>
+      <dt>Status</dt><dd>${closed ? 'Closed. Result is on the Results tab.' : 'Open for voting'}</dd>
+      <dt>Election ID</dt><dd><code>${esc(an.id)}</code></dd>
+      <dt>Open positions</dt><dd>${g.seats}</dd>
+      <dt>Candidates</dt><dd>${g.candidates.map(esc).join(', ')}</dd>
+      <dt>Called</dt><dd>${esc(g.created)}</dd>
+      <dt>Blocks</dt><dd>${nodes.length - invalid.length} valid${invalid.length ? `, ${invalid.length} rejected` : ''}</dd>
+    </dl>
+    <h3>Pools and turnout</h3>
+    <div class="tablewrap"><table><tr><th>Pool</th><th>Type</th><th class="num">On roll</th><th class="num">Voted</th></tr>${pools}</table></div>
+    <p class="row" style="margin-bottom:0"><button class="btn primary" id="dlChain">Download chain file</button><button class="btn" id="clearChain">Unload</button>
+    <span class="muted small">Compare the election ID with the one the organiser announced.</span></p>
+  </div>
+  <div class="card"><h2>Blocks</h2><div class="tablewrap"><table><tr><th class="num">#</th><th>ID</th><th>Block</th><th>Builds on</th><th>Check</th></tr>${rows}</table></div></div>`;
+  $('#dlChain').onclick = downloadChain;
+  $('#clearChain').onclick = () => { $('#loadMsg').innerHTML = ''; setChain([]); };
+}
+
+/* ---------- vote tab ---------- */
+let ranking = [], armed = false, lastVote = null;
+function ticketState() {
+  const v = $('#ticket') ? $('#ticket').value.trim() : '';
+  if (!v) return { ok: false, html: '' };
+  try {
+    const t = VC.parseTicket(v);
+    if (!an.rollMap.has(t.pub)) return { ok: false, html: note('bad', 'This ticket is not on the voter roll for this election.') };
+    if (an.voted.has(t.pub)) return { ok: false, html: note('warn', `This ticket has already voted in this chain file (ballot <span class="mono">${short(an.voted.get(t.pub))}</span>).`) };
+    return { ok: true, html: note('ok', `Ticket accepted. Pool: <b>${esc(an.genesis.pools[an.rollMap.get(t.pub)].name)}</b>`) };
+  } catch (e) { return { ok: false, html: note('bad', esc(e.message)) }; }
+}
+function renderRanking() {
+  const g = an.genesis, rest = g.candidates.map((_, i) => i).filter(i => !ranking.includes(i));
+  $('#rankList').innerHTML = ranking.map((c, i) => `<li><span class="n">${i + 1}</span><span class="name">${cand(c)}</span>
+      <button class="mini" data-act="up" data-i="${i}" ${i ? '' : 'disabled'} aria-label="Move up">↑</button>
+      <button class="mini" data-act="down" data-i="${i}" ${i < ranking.length - 1 ? '' : 'disabled'} aria-label="Move down">↓</button>
+      <button class="mini" data-act="del" data-i="${i}" aria-label="Remove">✕</button></li>`).join('')
+    + rest.map(c => `<li class="un"><span class="n">–</span><span class="name">${cand(c)}</span><button class="mini" data-act="add" data-c="${c}">Rank ${ranking.length + 1}</button></li>`).join('');
+  const ts = ticketState();
+  $('#ticketMsg').innerHTML = ts.html;
+  const btn = $('#castBtn');
+  btn.disabled = !(ts.ok && ranking.length);
+  btn.textContent = armed ? 'Click again to confirm. This cannot be changed.' : 'Cast vote';
+  btn.className = 'btn ' + (armed ? 'danger' : 'primary');
+}
+function renderVote() {
+  const el = $('#voteBody');
+  if (lastVote && an.genesis && lastVote.election === an.id) {
+    el.innerHTML = `<div class="card"><h2>Your vote is in the chain file</h2>
+      ${note('ok', 'Your ballot was added. <b>Now send the updated chain file back</b> the way the organiser asked. Your vote only counts once that file reaches them.')}
+      <dl><dt>Ballot ID</dt><dd><code>${esc(lastVote.ballot)}</code></dd><dt>Your ranking</dt><dd>${rankText(lastVote.ranking)}</dd></dl>
+      <p class="row"><button class="btn primary" id="dlChain2">Download updated chain file</button><button class="btn" id="dlReceipt">Download receipt</button><button class="btn" id="voteAgain">Done</button></p>
+      <p class="muted small">Keep the receipt or the ballot ID to check later that your vote was counted. The receipt shows how you voted, so keep it private.
+      Whoever you send the chain file to can see which voter key added the newest block.</p></div>`;
+    $('#dlChain2').onclick = downloadChain;
+    $('#dlReceipt').onclick = () => download(`receipt-${lastVote.ballot.slice(0, 10)}.json`, JSON.stringify({ format: 'votechain-receipt/1', election: an.id, title: an.genesis.title, ballot: lastVote.ballot, voter: 'vp1_' + lastVote.voter, ranking: lastVote.ranking.map(c => an.genesis.candidates[c]) }, null, 1));
+    $('#voteAgain').onclick = () => { lastVote = null; renderVote(); };
+    return;
+  }
+  if (!an.genesis) { el.innerHTML = `<div class="card"><h2>Vote</h2><p class="muted">Load the election's chain file on the Chain file tab first.</p></div>`; return; }
+  if (an.tally) { el.innerHTML = `<div class="card"><h2>Vote</h2>${note('warn', 'This election is closed. See the Results tab.')}</div>`; return; }
+  const g = an.genesis;
+  ranking = ranking.filter(c => c < g.candidates.length); armed = false;
+  el.innerHTML = `<div class="card"><h2>Vote: ${esc(g.title)}</h2>
+    <p class="muted small">${g.seats} open position${g.seats > 1 ? 's' : ''}. Rank the candidates in the order you prefer them. You can rank as many or as few as you like;
+    if your first choice has more support than needed or is out of the running, your vote moves to your next choice.</p>
+    <label>Your voting ticket</label>
+    <input type="password" id="ticket" autocomplete="off" spellcheck="false" placeholder="vt1_…">
+    <div id="ticketMsg"></div>
+    <label>Your ranking</label>
+    <ol class="rank" id="rankList"></ol>
+    <p><button class="btn primary" id="castBtn">Cast vote</button></p>
+    <div id="voteMsg"></div></div>`;
+  $('#ticket').addEventListener('input', () => { armed = false; renderRanking(); });
+  $('#rankList').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const i = +b.dataset.i, act = b.dataset.act; armed = false;
+    if (act === 'add') ranking.push(+b.dataset.c);
+    if (act === 'del') ranking.splice(i, 1);
+    if (act === 'up') [ranking[i - 1], ranking[i]] = [ranking[i], ranking[i - 1]];
+    if (act === 'down') [ranking[i + 1], ranking[i]] = [ranking[i], ranking[i + 1]];
+    renderRanking();
+  });
+  $('#castBtn').onclick = async () => {
+    if (!armed) { armed = true; renderRanking(); return; }
+    try {
+      const mine = ranking.slice(), { block, id } = await VC.createBallot(an, $('#ticket').value, mine);
+      an = await VC.analyse(an.blocks.concat([block]));
+      if (!an.info.get(id) || !an.info.get(id).valid) throw new Error('The new ballot failed verification; nothing was saved.');
+      lastVote = { election: an.id, ballot: id, voter: block.voter, ranking: mine }; ranking = [];
+      renderAll(); downloadChain();
+    } catch (e) { armed = false; renderRanking(); fail($('#voteMsg'), e); }
+  };
+  renderRanking();
+}
+$('#genKey').onclick = async () => {
+  const k = await VC.newVoterKey();
+  $('#genKeyOut').innerHTML = `<label>Public key <span class="muted">(send this to the organiser)</span></label><textarea readonly rows="2" class="mono">${esc(k.pubString)}</textarea>
+    <label>Ticket <span class="muted">(secret, keep it; it is not stored anywhere)</span></label><textarea readonly rows="3" class="mono">${esc(k.ticket)}</textarea>
+    <p><button class="btn" id="dlTicket">Download ticket</button></p>`;
+  $('#dlTicket').onclick = () => download(`votechain-ticket-${k.pub.slice(0, 8)}.txt`, k.ticket + '\n', 'text/plain');
+};
+
+/* ---------- check tab ---------- */
+function trailText(scope, id) {
+  const o = scope.outcome.get(id); if (!o) return '';
+  const parts = o.trail.filter(t => t.w.n > 0n).map(t => `${t.w.toString()} with ${cand(t.c)} (${scope.status[t.c] === 'elected' ? 'elected' : 'not elected'})`);
+  if (o.exhausted.n > 0n) parts.push(`${o.exhausted.toString()} unused (no further choices left on your ballot)`);
+  return parts.join('; ');
+}
+function describeBallot(n) {
+  const g = an.genesis, lines = [`<dt>Ballot ID</dt><dd><code>${esc(n.id)}</code></dd>`];
+  let verdict;
+  if (n.type !== 'ballot') return note('warn', 'That ID is a ' + esc(n.type) + ' block, not a ballot.');
+  if (!n.valid) verdict = note('bad', 'This ballot is in the file but was <b>rejected</b>: ' + esc(n.reason) + '.');
+  else if (n.superseded) verdict = note('warn', `This ballot is <b>not counted</b> because the same voter has another ballot that takes precedence (<span class="mono">${short(n.superseded)}</span>).`);
+  else if (n.late) verdict = note('bad', 'This ballot is valid but is <b>not part of the closed chain</b>, so it was not counted.');
+  else if (!an.tally) verdict = note('ok', 'This ballot is in this chain file and is valid. The election is still open, so check again with the final chain file once it is published.');
+  else {
+    const f = an.count.formal.find(b => b.id === n.id);
+    if (!f) verdict = note('bad', 'This ballot is in the final chain but could not be read as a valid ranking, so it was set aside as informal.');
+    else {
+      verdict = note('ok', 'This ballot <b>is in the final count</b>.');
+      lines.push(`<dt>Counted as</dt><dd>${rankText(f.ranking)}</dd>`);
+      const off = an.count.scopes.find(s => s.pools.includes(f.pool) && s.key === 'official') || an.count.scopes.find(s => s.key === 'pool:' + f.pool);
+      if (off) lines.push(`<dt>Where it went</dt><dd>${trailText(off, n.id)} <span class="muted small">(${esc(off.label)})</span></dd>`);
+    }
+  }
+  lines.push(`<dt>Voter key</dt><dd><code>vp1_${esc(n.block.voter)}</code></dd>`);
+  if (an.rollMap.has(n.block.voter)) lines.push(`<dt>Pool</dt><dd>${esc(g.pools[an.rollMap.get(n.block.voter)].name)}</dd>`);
+  return verdict + `<dl>${lines.join('')}</dl>`;
+}
+$('#checkBtn').onclick = () => {
+  const out = $('#checkOut'), v = $('#checkIn').value.trim();
+  if (!an.genesis) return fail(out, 'Load a chain file first.');
+  let pub = null, bid = null;
+  try { pub = VC.parseTicket(v).pub; } catch { try { pub = VC.parsePub(v); } catch { } }
+  if (!pub) { if (/^[0-9a-f]{64}$/i.test(v)) bid = v.toLowerCase(); else { try { const r = JSON.parse(v); if (r.election && r.election !== an.id) return fail(out, 'That receipt is for a different election.'); bid = r.ballot; } catch { } } }
+  if (bid) { const n = an.info.get(bid); out.innerHTML = n ? describeBallot(n) : note('bad', 'That ballot is <b>not in this chain file</b>.'); return; }
+  if (!pub) return fail(out, 'Enter a ticket (vt1_…), a public key (vp1_…), a 64-character ballot ID or a receipt.');
+  if (!an.rollMap.has(pub)) { out.innerHTML = note('bad', 'This voter key is not on the roll for this election.'); return; }
+  const mine = [...an.info.values()].filter(n => n.type === 'ballot' && n.block.voter === pub);
+  out.innerHTML = mine.length ? mine.map(describeBallot).join('<hr style="border:0;border-top:1px solid var(--line);margin:14px 0">')
+    : note(an.tally ? 'bad' : 'warn', `This voter key is on the roll (pool: ${esc(an.genesis.pools[an.rollMap.get(pub)].name)}) but has <b>no ballot in this chain file</b>.`);
+};
+
+/* ---------- results tab ---------- */
+function scopeHtml(s) {
+  const g = an.genesis, C = g.candidates;
+  const act = a => ({ elected: `${cand(a.c)} elected (reached the quota)`, 'elected-remaining': `${cand(a.c)} elected (fills a remaining position)`, surplus: `${cand(a.c)}'s surplus of ${a.amount} passed on`, excluded: `${cand(a.c)} excluded (fewest votes)` }[a.type]) + (a.byLot ? ' <span class="pill warn">tie broken by lot</span>' : '');
+  const rounds = s.rounds.map((r, i) => `<tr><td class="num">${i + 1}</td>${r.totals.map((t, c) => `<td class="num ${r.status[c] === 'hopeful' ? '' : r.status[c]}">${t}</td>`).join('')}<td class="num">${r.exhausted}</td><td>${r.actions.map(act).join('<br>')}</td></tr>`).join('');
+  return `<div class="card"><h2>${esc(s.label)}</h2>
+    <p>${s.elected.length ? '<b>Elected:</b> ' + s.elected.map((c, i) => `${i + 1}. ${cand(c)}`).join(' &nbsp; ') : '<span class="muted">No ballots, so nobody is elected.</span>'}</p>
+    <p class="muted small">${s.ballots} ballot${s.ballots === 1 ? '' : 's'} from ${s.pools.map(i => esc(g.pools[i].name)).join(' + ')} · quota ${s.quota} · ${g.seats} position${g.seats > 1 ? 's' : ''}</p>
+    ${s.rounds.length ? `<details><summary>Count, round by round</summary><div class="tablewrap"><table><tr><th class="num">Round</th>${C.map(c => `<th class="num">${esc(c)}</th>`).join('')}<th class="num">Unused</th><th>What happened</th></tr>${rounds}</table></div></details>` : ''}</div>`;
+}
+function renderResults() {
+  const el = $('#resultsBody');
+  if (!an.genesis) { el.innerHTML = `<div class="card"><h2>Results</h2><p class="muted">Load a chain file first.</p></div>`; return; }
+  const g = an.genesis;
+  if (!an.tally) {
+    const total = an.turnout.reduce((s, t) => s + t.voted, 0), roll = g.roll.length;
+    el.innerHTML = `<div class="card"><h2>Results</h2>${note('warn', 'The election is still open. Ballots stay encrypted until the organiser closes it.')}
+      <p>${total} of ${roll} voters have a ballot in this chain file.</p></div>`;
+    return;
+  }
+  const c = an.count, t = an.info.get(an.tally).block;
+  const head = an.errors.length ? an.errors.map(e => note('bad', esc(e))).join('')
+    : note('ok', `<b>Verified.</b> Every ballot was decrypted with the released key and the count was re-run in this browser. It matches the result signed by the organiser (closed ${esc(t.closed)}).`);
+  const late = [...an.info.values()].filter(n => n.late).length;
+  const ballots = c.formal.map(b => `<tr><td class="mono">${short(b.id)}</td><td>${esc(g.pools[b.pool].name)}</td><td>${rankText(b.ranking)}</td></tr>`).join('')
+    + c.informal.map(b => `<tr><td class="mono">${short(b.id)}</td><td>${esc(g.pools[b.pool].name)}</td><td><span class="pill warn">informal</span> unreadable or not a valid ranking</td></tr>`).join('');
+  el.innerHTML = head + (late ? note('warn', `${late} valid ballot(s) in this file are not part of the closed chain and were not counted.`) : '')
+    + c.scopes.map(scopeHtml).join('')
+    + `<div class="card"><details><summary>All ${c.formal.length + c.informal.length} counted ballots, decrypted</summary>
+      <p class="muted small">Find yours by ballot ID, or use the Check my vote tab.</p>
+      <div class="tablewrap"><table><tr><th>Ballot</th><th>Pool</th><th>Ranking</th></tr>${ballots}</table></div></details></div>`;
+}
+
+/* ---------- organiser tab ---------- */
+function addPoolRow(name = '', binding = true, n = 0) {
+  const d = document.createElement('div'); d.className = 'poolrow';
+  d.innerHTML = `<div><label>Pool name</label><input type="text" class="pName" value="${esc(name)}"></div>
+    <div><label>Type</label><select class="pBind"><option value="1">Binding</option><option value="0"${binding ? '' : ' selected'}>Advisory</option></select></div>
+    <div><label>Tickets to generate</label><input type="number" class="pGen" min="0" value="${n}"></div>
+    <div><button class="mini pDel" aria-label="Remove pool">✕</button></div>
+    <div class="wide"><label>Registered public keys <span class="muted">(optional, one vp1_… per line)</span></label><textarea class="pKeys mono" spellcheck="false" style="min-height:44px"></textarea></div>`;
+  d.querySelector('.pDel').onclick = () => d.remove();
+  $('#pools').appendChild(d);
+}
+addPoolRow('Verified member', true, 10);
+$('#addPool').onclick = () => addPoolRow('', false, 0);
+let created = null;
+$('#createBtn').onclick = async () => {
+  const out = $('#createOut');
+  try {
+    const pools = [...document.querySelectorAll('.poolrow')].map(d => ({ name: d.querySelector('.pName').value, binding: d.querySelector('.pBind').value === '1', generate: Math.max(0, parseInt(d.querySelector('.pGen').value, 10) || 0), registered: d.querySelector('.pKeys').value.split(/[\s,]+/).filter(Boolean) }));
+    const spec = { title: $('#eTitle').value, description: $('#eDesc').value, candidates: $('#eCands').value.split('\n').map(s => s.trim()).filter(Boolean), seats: parseInt($('#eSeats').value, 10), pools };
+    out.innerHTML = note('', 'Generating keys…');
+    const r = await VC.createElection(spec), pass = $('#ePass').value;
+    created = { ...r, keyFile: pass ? await VC.protectKey(r.organiserKey, pass) : r.organiserKey };
+    $('#ePass').value = '';
+    await setChain([r.genesis]);
+    const q = s => '"' + String(s).replace(/"/g, '""') + '"';
+    const csv = 'pool,voter_key,ticket\r\n' + r.tickets.map(t => [q(t.pool), 'vp1_' + t.voter, t.ticket].join(',')).join('\r\n') + '\r\n';
+    const base = slug(r.genesis.title);
+    out.innerHTML = note('ok', `<b>Election created.</b> Election ID <code>${esc(r.id)}</code>. Save all of these now; nothing is stored in this page.`) + `
+      <p class="row"><button class="btn primary" id="dlG">1. Chain file (share with voters)</button>
+      <button class="btn" id="dlK">2. Organiser key (keep secret)</button>
+      ${r.tickets.length ? `<button class="btn" id="dlT">3. Tickets (${r.tickets.length}, hand out one each)</button>` : ''}</p>
+      <p class="muted small">The organiser key is needed to close the election. ${pass ? 'It is encrypted with your passphrase.' : 'It is <b>not</b> passphrase protected.'}
+      Anyone holding a ticket can cast that vote, so give each voter one ticket privately and then delete your copy of the ticket list.</p>`;
+    $('#dlG').onclick = downloadChain;
+    $('#dlK').onclick = () => download(`${base}-ORGANISER-KEY.json`, JSON.stringify(created.keyFile, null, 1));
+    if (r.tickets.length) $('#dlT').onclick = () => download(`${base}-TICKETS.csv`, csv, 'text/csv');
+  } catch (e) { fail(out, e); }
+};
+let closeArmed = false;
+$('#closeBtn').onclick = async () => {
+  const out = $('#closeOut'), btn = $('#closeBtn');
+  try {
+    if (!an.genesis) throw new Error('Load and merge the chain files first.');
+    const f = $('#orgKeyIn').files[0]; if (!f) throw new Error('Choose your organiser key file.');
+    if (!closeArmed) {
+      closeArmed = true; btn.textContent = 'Click again to close. This is final.';
+      const total = an.turnout.reduce((s, t) => s + t.voted, 0);
+      out.innerHTML = note('warn', `About to close <b>${esc(an.genesis.title)}</b> with ${total} ballot(s) from ${an.blocks.length} block(s). Ballots you have not merged yet will not be counted.`);
+      return;
+    }
+    closeArmed = false; btn.textContent = 'Close election';
+    let parsed; try { parsed = JSON.parse(await f.text()); } catch { throw new Error('That is not an organiser key file.'); }
+    const key = await VC.unprotectKey(parsed, $('#orgPass').value);
+    const { block } = await VC.createTally(an, key);
+    $('#orgPass').value = '';
+    await setChain(an.blocks.concat([block]));
+    out.innerHTML = note(an.errors.length ? 'bad' : 'ok', '<b>Election closed.</b> Publish the final chain file so every voter can verify the count.') + `<p><button class="btn primary" id="dlFinal">Download final chain file</button></p>`;
+    $('#dlFinal').onclick = downloadChain; downloadChain();
+  } catch (e) { closeArmed = false; btn.textContent = 'Close election'; fail(out, e); }
+};
+
+/* ---------- shell ---------- */
+function renderAll() { renderChain(); renderVote(); renderResults(); $('#checkOut').innerHTML = ''; }
+$('#nav').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('main > section').forEach(s => s.classList.toggle('on', s.id === 'tab-' + b.dataset.tab));
+});
+if (!globalThis.crypto || !crypto.subtle) document.querySelector('main').innerHTML = note('bad', 'This browser does not expose the Web Crypto API here. Open the file in a current version of Chrome, Edge, Firefox or Safari.');
+else setChain([]);
+})();
+</script>
+</body>
+</html>
