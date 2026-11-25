@@ -677,7 +677,7 @@ drop.addEventListener('drop', e => loadFiles([...e.dataTransfer.files]));
 function turnoutNote() {
   const g = an.genesis, n = an.voted.size;
   if (!g.electorate) return '';
-  return n <= g.electorate ? note('ok', `${plural(n, 'ballot')} from ${plural(g.electorate, 'person')} entitled to vote.`)
+  return n <= g.electorate ? note('ok', `${plural(n, 'ballot')} from ${g.electorate} ${g.electorate === 1 ? 'person' : 'people'} entitled to vote.`)
     : note('bad', `<b>More ballots (${n}) than people entitled to vote (${g.electorate}).</b> The combined result cannot be relied on until every voter has been confirmed.`);
 }
 function renderChain() {
