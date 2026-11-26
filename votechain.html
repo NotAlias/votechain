@@ -28,6 +28,9 @@ nav button { border: 0; background: none; color: var(--muted); font: inherit; pa
 nav button.on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
 main { max-width: 980px; margin: 0 auto; padding: 16px; }
 section { display: none; } section.on { display: block; }
+/* Until the script has started, show only the explanation of why nothing works. */
+body:not(.ready) nav, body:not(.ready) main { display: none; }
+#nojs { max-width: 948px; margin: 16px auto; padding: 0 16px; } body.ready #nojs { display: none; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
 .muted { color: var(--muted); } .small { font-size: 13px; }
 .pill { display: inline-block; padding: 1px 9px; border-radius: 99px; font-size: 12.5px; font-weight: 600; background: var(--code); color: var(--muted); }
@@ -72,6 +75,20 @@ details summary { cursor: pointer; font-weight: 600; }
 </head>
 <body>
 <header><h1>Votechain</h1><span id="pill" class="pill">no election loaded</span><span id="pillTitle" class="muted"></span></header>
+<div id="nojs"><div class="note bad"><b>This page is not running.</b> It has been opened in a file preview, which does not run the page's script, or in a browser that is too old.
+  <span id="nojsErr"></span>
+  <ul style="margin:8px 0 0; padding-left:20px">
+    <li><b>On a phone:</b> use the web link to this page if the organiser gave you one. A copy saved to an iPhone cannot be run from the Files app.</li>
+    <li><b>On Android:</b> open the saved file with Chrome or Firefox, not the built-in HTML viewer.</li>
+    <li><b>On a computer:</b> save the file and open it in Chrome, Edge, Firefox or Safari.</li>
+  </ul></div></div>
+<script>
+/* Runs first and uses only old syntax, so a failure in the scripts below is reported instead of leaving a dead page. */
+window.addEventListener('error', function (e) {
+  var el = document.getElementById('nojsErr');
+  if (el && !document.body.classList.contains('ready')) el.textContent = 'The browser reported: ' + (e.message || 'script error') + '.';
+});
+</script>
 <nav id="nav">
   <button data-tab="chain" class="on">Chain file</button>
   <button data-tab="vote">Vote</button>
@@ -1074,8 +1091,11 @@ $('#nav').addEventListener('click', e => {
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
   document.querySelectorAll('main > section').forEach(s => s.classList.toggle('on', s.id === 'tab-' + b.dataset.tab));
 });
-if (!globalThis.crypto || !crypto.subtle) document.querySelector('main').innerHTML = note('bad', 'This browser does not expose the Web Crypto API here. Open the file in a current version of Chrome, Edge, Firefox or Safari.');
-else setChain([]);
+if (!globalThis.crypto || !crypto.subtle) {
+  $('#nav').style.display = 'none';
+  document.querySelector('main').innerHTML = note('bad', '<b>This browser will not do the cryptography for a page opened this way.</b> Browsers only allow it for pages loaded from an https address, from localhost, or (on a computer) from a saved file. Use the web link to this page if the organiser gave you one, or open the saved file on a computer.');
+  document.body.classList.add('ready');
+} else setChain([]).then(() => document.body.classList.add('ready'));
 })();
 </script>
 </body>

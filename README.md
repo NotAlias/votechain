@@ -24,6 +24,19 @@ organiser can collect it (a Discord channel works).
 Announce the **election ID** (shown after creation) through a channel voters trust, so they can tell the real
 genesis block from a fake one.
 
+## Phones
+
+Tapping the HTML file in Discord or in a phone's file manager opens a preview that does not run scripts, so
+the page is dead. The page now says so instead of showing tabs that do nothing.
+
+For voters on phones, put `votechain.html` on any static https host (GitHub Pages works) and share the link.
+Nothing is sent to that host: the page still does everything in the browser, and chain files are still
+loaded from and saved to the phone. Voters then trust that the hosted copy is the real file, which they can
+check by comparing it with the copy the organiser posted.
+
+Android can also run a saved copy if it is opened with Chrome or Firefox. An iPhone cannot run a saved copy
+from the Files app.
+
 ## Pools and the unverified escape hatch
 
 Every counted ballot sits in exactly one pool. The default setup has two:
