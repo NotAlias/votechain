@@ -37,6 +37,12 @@ Nothing is sent to that host: the page still does everything in the browser, and
 loaded from and saved to the phone. Voters then trust that the hosted copy is the real file, which they can
 check by comparing it with the copy the organiser posted.
 
+A link can open the page with an election already loaded: `votechain.html?chain=<path>` fetches that chain
+file on arrival and goes straight to the Vote tab (or Results once closed). Only a path below the page itself
+is accepted. `committee-election/` is set up this way; replacing its `chain.json` with the merged or final
+chain lets voters follow the election from the same link. Organiser keys and tickets live in `private/`,
+which git ignores.
+
 Android can also run a saved copy if it is opened with Chrome or Firefox. An iPhone cannot run a saved copy
 from the Files app.
 
