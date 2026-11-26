@@ -369,17 +369,32 @@ function stv(nc, seats, ballots, lot) {
     if (it.pos < r.length) piles[r[it.pos]].push(it); else { exhausted = exhausted.add(it.w); it.exh = it.w; it.w = Q0; }
   };
   items.forEach(place);
-  /* Highest (or lowest) of cands by this round's totals, then by the most recent earlier round where they differ, then by lot. */
+  /* prefs[k][c]: how many ballots put candidate c at preference k+1. Used only to break ties. */
+  const prefs = Array.from({ length: nc }, () => Array(nc).fill(0));
+  for (const b of ballots) b.ranking.forEach((c, k) => prefs[k][c]++);
+  /* Highest (or lowest) of cands by this round's totals. Candidates level on that are separated by, in order:
+     1. their totals in earlier rounds, starting from round 1 (first preferences);
+     2. how many ballots gave them a second preference, then a third, and so on;
+     3. the lot, only when all of the above are equal.
+     Returns {c, tie}: tie is null, or {among: the candidates that were level, by: 'round'|'prefs'|'lot', n}. */
   const pick = (cands, lowest) => {
-    let pool = cands.slice();
-    for (let r = history.length - 1; r >= 0 && pool.length > 1; r--) {
-      const t = history[r]; let best = pool[0];
-      for (const c of pool) { const k = t[c].cmp(t[best]); if (lowest ? k < 0 : k > 0) best = c; }
-      pool = pool.filter(c => t[c].cmp(t[best]) === 0);
-    }
-    if (pool.length === 1) return { c: pool[0], byLot: false };
-    pool.sort((a, b) => lot[a] < lot[b] ? -1 : 1);
-    return { c: lowest ? pool[0] : pool[pool.length - 1], byLot: true };
+    let pool = cands.slice(), by = null, n = 0;
+    const narrow = (val, cmp, label, num) => {
+      if (pool.length < 2) return;
+      let best = pool[0];
+      for (const c of pool) { const k = cmp(val(c), val(best)); if (lowest ? k < 0 : k > 0) best = c; }
+      const next = pool.filter(c => cmp(val(c), val(best)) === 0);
+      if (next.length < pool.length) { by = label; n = num; }
+      pool = next;
+    };
+    const cur = history.length - 1, qcmp = (a, b) => a.cmp(b);
+    narrow(c => history[cur][c], qcmp, null, 0);
+    if (pool.length === 1) return { c: pool[0], tie: null };
+    const among = pool.slice().sort((a, b) => a - b);
+    for (let r = 0; r < cur; r++) narrow(c => history[r][c], qcmp, 'round', r + 1);
+    for (let k = 1; k < nc; k++) narrow(c => prefs[k][c], (a, b) => a - b, 'prefs', k + 1);
+    if (pool.length > 1) { pool.sort((a, b) => lot[a] < lot[b] ? -1 : 1); pool = [lowest ? pool[0] : pool[pool.length - 1]]; by = 'lot'; n = 0; }
+    return { c: pool[0], tie: { among, by, n } };
   };
   const hopefuls = () => status.map((s, c) => c).filter(c => status[c] === 'hopeful');
   for (;;) {
@@ -387,21 +402,22 @@ function stv(nc, seats, ballots, lot) {
     history.push(totals);
     const round = { totals, exhausted, actions: [], status: null };
     res.rounds.push(round);
-    const elect = (list, type) => { while (list.length && res.elected.length < seats) { const { c, byLot } = pick(list, false); list = list.filter(x => x !== c); status[c] = 'elected'; res.elected.push(c); round.actions.push({ type, c, byLot }); if (type === 'elected') pending.push(c); } };
+    /* Everyone on the list is elected, so a tie here only decides the order they are listed in and is not reported. */
+    const elect = (list, type) => { while (list.length && res.elected.length < seats) { const { c } = pick(list, false); list = list.filter(x => x !== c); status[c] = 'elected'; res.elected.push(c); round.actions.push({ type, c, tie: null }); if (type === 'elected') pending.push(c); } };
     elect(hopefuls().filter(c => totals[c].cmp(quota) >= 0), 'elected');
     const hope = hopefuls();
     if (res.elected.length < seats && hope.length <= seats - res.elected.length) elect(hope, 'elected-remaining');
     if (res.elected.length >= seats) { round.status = status.slice(); break; }
     if (pending.length) {
-      const { c, byLot } = pick(pending, false); pending.splice(pending.indexOf(c), 1);
+      const { c, tie } = pick(pending, false); pending.splice(pending.indexOf(c), 1);
       const surplus = totals[c].sub(quota), factor = surplus.div(totals[c]), pile = piles[c];
       piles[c] = []; fixed[c] = quota;
       for (const it of pile) { const moved = it.w.mul(factor); it.trail.push({ c, w: it.w.sub(moved) }); it.w = moved; if (moved.n > 0n) place(it); }
-      round.actions.push({ type: 'surplus', c, amount: surplus, byLot });
+      round.actions.push({ type: 'surplus', c, amount: surplus, tie });
     } else {
-      const { c, byLot } = pick(hope, true); status[c] = 'excluded';
+      const { c, tie } = pick(hope, true); status[c] = 'excluded';
       const pile = piles[c]; piles[c] = []; pile.forEach(place);
-      round.actions.push({ type: 'excluded', c, byLot });
+      round.actions.push({ type: 'excluded', c, tie });
     }
     round.status = status.slice();
   }
@@ -414,6 +430,13 @@ function stv(nc, seats, ballots, lot) {
 /* ---------- the count ---------- */
 /* revealed[pool][position] = [{c: anonymous code, r: ranking}], as published in the closing block.
    Counts every position for all pools together and for each pool on its own. */
+/* The counted ballots as a set of distinct rankings with how many ballots gave each: [{r, n}], most common first. */
+function groupBallots(list) {
+  const m = new Map();
+  for (const e of list) { const k = e.r.join(','); m.set(k, (m.get(k) || 0) + 1); }
+  const cmp = (a, b) => { for (let i = 0; i < a.length && i < b.length; i++) if (a[i] !== b[i]) return a[i] - b[i]; return a.length - b.length; };
+  return [...m].map(([k, n]) => ({ r: k ? k.split(',').map(Number) : [], n })).sort((a, b) => b.n - a.n || cmp(a.r, b.r));
+}
 async function computeResults(g, seed, revealed) {
   const all = g.pools.map((_, i) => i);
   const defs = [{ key: 'all', label: g.pools.length > 1 ? 'All pools combined' : 'Result', pools: all }];
@@ -425,7 +448,7 @@ async function computeResults(g, seed, revealed) {
       const lot = await Promise.all(race.candidates.map((_, i) => sha256hex(seed + '|' + ri + '|' + i)));
       const cast = d.pools.flatMap(p => revealed[p][ri]);
       const bs = cast.filter(e => e.r.length).map(e => ({ id: e.c, ranking: e.r }));
-      races.push({ ballots: bs.length, abstained: cast.length - bs.length, ...stv(race.candidates.length, race.seats, bs, lot) });
+      races.push({ ballots: bs.length, abstained: cast.length - bs.length, groups: groupBallots(cast), ...stv(race.candidates.length, race.seats, bs, lot) });
     }
     out.push({ ...d, races });
   }
@@ -619,7 +642,7 @@ async function createTally(an, key) {
   return { block, id: await blockId(block) };
 }
 
-return { FORMAT, analyse, createElection, createBallot, createAdmit, createTally, protectKey, unprotectKey, newVoterKey, parseTicket, parsePub, blockId, codeFor, signBlock, stv, Q, canon };
+return { FORMAT, analyse, createElection, createBallot, createAdmit, createTally, protectKey, unprotectKey, newVoterKey, parseTicket, parsePub, blockId, codeFor, signBlock, stv, groupBallots, Q, canon };
 })();
 </script>
 
@@ -898,14 +921,26 @@ $('#checkBtn').onclick = () => runCheck().catch(e => fail($('#checkOut'), e));
 $('#receiptIn').addEventListener('change', async e => { const f = e.target.files[0]; if (f) { $('#checkIn').value = await f.text(); $('#checkBtn').click(); } e.target.value = ''; });
 
 /* ---------- results tab ---------- */
-function raceHtml(race, ri, r) {
+const ord = n => ['first', 'second', 'third', 'fourth', 'fifth', 'sixth'][n - 1] || n + 'th';
+function tieHtml(C, a) {
+  const t = a.tie; if (!t) return '';
+  const others = t.among.filter(x => x !== a.c).map(x => esc(C[x])).join(', ');
+  const how = t.by === 'round' ? (t.n === 1 ? 'on first preferences' : `on the totals in round ${t.n}`) : t.by === 'prefs' ? `on ${ord(t.n)} preferences` : 'by lot';
+  return `<br><span class="small">${t.by === 'lot' ? '<span class="pill warn">decided by lot</span> ' : ''}Level with ${others}; decided ${how}${t.by === 'lot' ? ', because they were level on every earlier round and at every preference' : ''}.</span>`;
+}
+function raceHtml(race, ri, r, open) {
   const C = race.candidates;
-  const act = a => ({ elected: `${esc(C[a.c])} elected (reached the quota)`, 'elected-remaining': `${esc(C[a.c])} elected (fills a remaining place)`, surplus: `${esc(C[a.c])}'s surplus of ${a.amount} passed on`, excluded: `${esc(C[a.c])} excluded (fewest votes)` }[a.type]) + (a.byLot ? ' <span class="pill warn">tie broken by lot</span>' : '');
+  const act = a => ({ elected: `${esc(C[a.c])} elected (reached the quota)`, 'elected-remaining': `${esc(C[a.c])} elected (fills a remaining place)`, surplus: `${esc(C[a.c])}'s surplus of ${a.amount} passed on`, excluded: `${esc(C[a.c])} excluded (fewest votes)` }[a.type]) + tieHtml(C, a);
+  const total = r.ballots + r.abstained;
+  const groups = r.groups.map(x => `<tr><td class="num" style="white-space:nowrap"><b>${x.n}</b> ×</td><td>${rankText(ri, x.r)}</td></tr>`).join('');
   const rounds = r.rounds.map((rd, i) => `<tr><td class="num">${i + 1}</td>${rd.totals.map((t, c) => `<td class="num ${rd.status[c] === 'hopeful' ? '' : rd.status[c]}">${t}</td>`).join('')}<td class="num">${rd.exhausted}</td><td>${rd.actions.map(act).join('<br>')}</td></tr>`).join('');
   return `<h3>${esc(race.name)}</h3>
     <p style="margin:0">${r.elected.length ? '<b>Elected:</b> ' + r.elected.map(c => esc(C[c])).join(', ') : '<span class="muted">No votes, so nobody is elected.</span>'}</p>
     <p class="muted small" style="margin:2px 0 6px">${plural(r.ballots, 'vote')}${r.abstained ? `, ${r.abstained} left blank` : ''} · quota ${r.quota} · elect ${race.seats}</p>
-    ${r.rounds.length ? `<details><summary class="small">Count, round by round</summary><div class="tablewrap"><table><tr><th class="num">Round</th>${C.map(c => `<th class="num">${esc(c)}</th>`).join('')}<th class="num">Unused</th><th>What happened</th></tr>${rounds}</table></div></details>` : ''}`;
+    ${r.rounds.length ? `<details><summary class="small">Count, round by round</summary><div class="tablewrap"><table><tr><th class="num">Round</th>${C.map(c => `<th class="num">${esc(c)}</th>`).join('')}<th class="num">Unused</th><th>What happened</th></tr>${rounds}</table></div>
+      <p class="muted small">When nominees are level, the one with more first preferences is placed ahead, then the one ahead in the earliest later round where they differ, then the one with more second preferences, third preferences and so on. Only nominees level on all of that are separated by lot.</p></details>` : ''}
+    ${total ? `<details${open ? ' open' : ''}><summary class="small">What was counted: ${plural(total, 'ballot')}, ${r.groups.length} different</summary>
+      <div class="tablewrap"><table><tr><th class="num">Ballots</th><th>Ranking</th></tr>${groups}</table></div></details>` : ''}`;
 }
 function renderResults() {
   const el = $('#resultsBody');
@@ -926,12 +961,12 @@ function renderResults() {
   const anon = c.revealed.map((p, pi) => `<h3>${esc(g.pools[pi].name)}</h3>` + p.map((list, ri) => `<p class="small" style="margin:6px 0 2px"><b>${esc(g.races[ri].name)}</b></p><div class="tablewrap"><table>${list.map(e => `<tr><td class="mono">${esc(e.c)}</td><td>${rankText(ri, e.r)}</td></tr>`).join('') || '<tr><td class="muted">none</td></tr>'}</table></div>`).join('')).join('');
   el.innerHTML = head + turnoutNote()
     + (late ? note('bad', `<b>${plural(late, 'valid ballot')} in this file ${late === 1 ? 'is' : 'are'} not part of the closed chain and ${late === 1 ? 'was' : 'were'} not counted.</b> If ${late === 1 ? 'it was' : 'they were'} submitted before closing, the result should be treated as invalid.`) : '')
-    + c.scopes.map(s => `<div class="card"><h2>${esc(s.label)}</h2>${g.races.map((race, ri) => raceHtml(race, ri, s.races[ri])).join('')}</div>`).join('')
+    + c.scopes.map(s => `<div class="card"><h2>${esc(s.label)}</h2>${g.races.map((race, ri) => raceHtml(race, ri, s.races[ri], s.key === 'all')).join('')}</div>`).join('')
     + `<div class="card"><details><summary>Who was counted (${an.voted.size})</summary>
       <p class="muted small">The keys whose ballots are in the count. Nothing here says how any of them voted.</p>
       <div class="tablewrap"><table><tr><th>Voter key</th><th>Pool</th><th>Ballot</th><th></th></tr>${who}</table></div></details></div>
-    <div class="card"><details><summary>The anonymous ballots that were counted</summary>
-      <p class="muted small">One line per ballot per position, in code order. A code can only be worked out from the voter's receipt, and a different code is used for each position.</p>${anon}</details></div>`;
+    <div class="card"><details><summary>The anonymous ballots, one by one</summary>
+      <p class="muted small">The same ballots as the "What was counted" tables above, one line per ballot per position, in code order. A code can only be worked out from the voter's receipt, and a different code is used for each position.</p>${anon}</details></div>`;
 }
 
 /* ---------- organiser tab ---------- */

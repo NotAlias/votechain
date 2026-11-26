@@ -81,8 +81,18 @@ decryption key is never published.
 - Only blocks that the closing block builds on count. Nothing may build on a closing block.
 - Two different closing blocks are reported as a dispute.
 - The count is single transferable vote per position: Droop quota, weighted inclusive Gregory surplus
-  transfers, exact fractions. Exact ties are broken by earlier rounds, then by a lot derived from the chain.
-  Electing one person is instant-runoff voting.
+  transfers, exact fractions. Electing one person is instant-runoff voting.
+- Ties: when nominees are level, the one with more first preferences is placed ahead; then the one ahead in
+  the earliest later round where their totals differ; then the one with more second preferences on all
+  ballots, then third preferences, and so on. Only nominees level on all of that are separated by a lot
+  derived from the chain. The round-by-round table says which step decided each tie.
+
+### What the Results tab shows
+
+For every position, in every pool and for all pools combined: who was elected, the count round by round, and
+**what was counted** as a set of distinct rankings with the number of ballots that gave each (for example
+`10 × Ann, Cy, Bob` and `2 × Bob, Ann`), including ballots left blank for that position. Below that are the
+list of keys whose ballots counted and the anonymous ballots one by one.
 
 ## What rests on the organiser
 

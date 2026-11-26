@@ -41,6 +41,30 @@ await test('STV: no ballots elects nobody; every ballot keeps a total value of 1
   const r = VC.stv(4, 2, [...rep(7, [0, 1, 2]), ...rep(3, [1]), ...rep(4, [2, 0]), ...rep(2, [3])].map(B), lot(4));
   for (const [, o] of r.outcome) assert.equal(o.trail.reduce((s, t) => s.add(t.w), o.exhausted).toString(), '1');
 });
+const tieOf = (r, type) => r.rounds.flatMap(rd => rd.actions).find(a => a.type === type && a.tie).tie;
+await test('STV tie: level in a later round, the one with fewer first preferences is excluded', () => {
+  // round 1: A4 B3 C2 D1; D goes to C, leaving B and C level on 3
+  const r = VC.stv(4, 1, [...rep(4, [0]), ...rep(3, [1]), ...rep(2, [2]), [3, 2]].map(B), lot(4));
+  assert.deepEqual(tieOf(r, 'excluded'), { among: [1, 2], by: 'round', n: 1 });
+  assert.equal(r.status[2], 'excluded');
+});
+await test('STV tie: level on first preferences, second preferences decide, not the lot', () => {
+  // B and C have 2 first preferences each; B has 3 second preferences and C none. The lot alone would exclude B.
+  const r = VC.stv(3, 1, [...rep(3, [0, 1]), ...rep(2, [1]), ...rep(2, [2, 1])].map(B), lot(3));
+  assert.deepEqual(tieOf(r, 'excluded'), { among: [1, 2], by: 'prefs', n: 2 });
+  assert.deepEqual(r.elected, [1]);
+});
+await test('STV tie: the lot is used only when nominees are level at every preference', () => {
+  const r = VC.stv(2, 1, [[0], [1]].map(B), lot(2));
+  assert.deepEqual(tieOf(r, 'excluded'), { among: [0, 1], by: 'lot', n: 0 });
+  // an election order tie changes nothing, so it is not reported
+  const e = VC.stv(3, 2, [[0], [1]].map(B), lot(3));
+  assert.ok(e.rounds.flatMap(rd => rd.actions).filter(a => a.type.startsWith('elected')).every(a => a.tie === null));
+});
+await test('counted ballots group into distinct rankings with counts', () => {
+  const g = VC.groupBallots([[1, 0], [0, 1], [], [1, 0], [0], [1, 0], []].map(r => ({ c: 'x', r })));
+  assert.deepEqual(g, [{ r: [1, 0], n: 3 }, { r: [], n: 2 }, { r: [0], n: 1 }, { r: [0, 1], n: 1 }]);
+});
 
 // ---------- a full election ----------
 const spec = {
