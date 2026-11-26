@@ -4,6 +4,9 @@ Distributed, anonymous, proportional voting in one HTML file. No server, no inst
 voters open `votechain.html`, load a chain file, add their encrypted ballot, and post the new file where the
 organiser can collect it (a Discord channel works).
 
+Hosted copy, for phones: <https://notalias.github.io/votechain/>. `index.html` only redirects to
+`votechain.html`, which is the whole app.
+
 ## How an election runs
 
 1. **Organiser calls the election** (Organiser tab). They set the title, the positions (each with its own
